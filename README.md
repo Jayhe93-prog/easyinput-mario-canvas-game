@@ -1,5 +1,9 @@
 # 超级马里奥
 
+[![Release](https://img.shields.io/github/v/release/Jayhe93-prog/easyinput-mario-canvas-game?label=release)](https://github.com/Jayhe93-prog/easyinput-mario-canvas-game/releases)
+[![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Jayhe93-prog/easyinput-mario-canvas-game/blob/main/LICENSE)
+[![Zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](https://github.com/Jayhe93-prog/easyinput-mario-canvas-game/blob/main/super-mario.html)
+
 一个零依赖的像素风横版闯关小游戏，整个游戏就是**一个 HTML 文件**。
 
 - `super-mario.html` —— 游戏本体，双击用浏览器打开即可玩，Mac / Windows / 手机通用
