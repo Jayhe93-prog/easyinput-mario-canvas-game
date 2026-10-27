@@ -1,0 +1,53 @@
+{
+  "name": "pixel-runner",
+  "productName": "超级马里奥",
+  "version": "1.0.0",
+  "description": "像素风横版闯关小游戏（单文件 HTML 的桌面封装）",
+  "main": "main.js",
+  "license": "MIT",
+  "author": "Jayhe93-prog",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win portable --x64"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.local.pixelrunner",
+    "productName": "超级马里奥",
+    "asar": true,
+    "files": [
+      "main.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../super-mario.html",
+        "to": "super-mario.html"
+      }
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "超级马里奥-v${version}.exe",
+      "requestExecutionLevel": "user"
+    },
+    "compression": "maximum"
+  }
+}

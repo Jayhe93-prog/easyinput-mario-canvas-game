@@ -1,0 +1,3631 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>超级马里奥</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #10141f;
+    color: #dfe6f5;
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  body {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 12px; padding: 16px;
+    user-select: none; -webkit-user-select: none;
+  }
+  #stage {
+    position: relative;
+    width: min(96vw, 960px);
+    aspect-ratio: 16 / 9;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 255, 255, .08) inset;
+    background: #6ba7e8;
+  }
+  canvas { display: block; width: 100%; height: 100%; }
+  #hint {
+    font-size: 13px; line-height: 1.7; text-align: center;
+    color: #8f9bb3; max-width: 960px;
+  }
+  kbd {
+    display: inline-block; min-width: 22px; text-align: center;
+    padding: 1px 6px; margin: 0 2px;
+    border-radius: 5px; background: #232b3d;
+    border: 1px solid #38445e; border-bottom-width: 2px;
+    font-family: inherit; font-size: 12px; color: #cfd8ea;
+  }
+  /* 移动端触屏虚拟按键 */
+  #touchpad {
+    position: absolute; inset: 0; z-index: 5;
+    display: none; pointer-events: none;
+  }
+  body.touch #touchpad { display: block; }
+  #touchpad button {
+    position: absolute; pointer-events: auto;
+    width: 66px; height: 66px; border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, .42);
+    background: rgba(10, 18, 32, .34);
+    color: #eaf2ff; font-size: 20px; font-weight: 700;
+    font-family: inherit; touch-action: none;
+    display: flex; align-items: center; justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #touchpad button:active { background: rgba(255, 255, 255, .32); }
+  #touchpad button:hover { background: rgba(255, 255, 255, .22); }
+  #touchpad button:focus-visible { outline: 2px solid #ffd447; outline-offset: 2px; }
+  /* 竖屏提示：建议横屏游玩 */
+  #rotate {
+    position: absolute; left: 50%; top: 12px; transform: translateX(-50%);
+    z-index: 6; display: none;
+    padding: 6px 14px; border-radius: 999px;
+    background: rgba(8, 14, 26, .72);
+    border: 1px solid rgba(255, 212, 71, .45);
+    color: #ffd447; font-size: 13px; white-space: nowrap;
+    pointer-events: none;
+  }
+  @media (orientation: portrait) and (max-width: 900px) {
+    #rotate { display: block; }
+  }
+  #touchpad .t-left { left: 16px; bottom: 20px; }
+  #touchpad .t-right { left: 94px; bottom: 20px; }
+  #touchpad .t-down { left: 172px; bottom: 20px; font-size: 16px; }
+  #touchpad .t-shoot { right: 100px; bottom: 20px; }
+  #touchpad .t-jump { right: 18px; bottom: 30px; width: 76px; height: 76px; }
+  /* 顶部小按钮：暂停与静音 */
+  #touchpad .t-mini {
+    width: 44px; height: 44px; border-radius: 12px;
+    font-size: 14px; top: 66px;
+  }
+  #touchpad .t-pause { right: 16px; }
+  #touchpad .t-mute { right: 68px; }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="game" width="960" height="540"></canvas>
+    <div id="rotate">建议横屏游玩</div>
+    <div id="touchpad">
+      <button class="t-left" data-act="left" aria-label="左">◀</button>
+      <button class="t-right" data-act="right" aria-label="右">▶</button>
+      <button class="t-down" data-act="down" aria-label="下">▼</button>
+      <button class="t-shoot" data-act="shoot" aria-label="火球">火</button>
+      <button class="t-jump" data-act="jump" aria-label="跳">跳</button>
+      <button class="t-mini t-pause" data-act="pause" aria-label="暂停">❚❚</button>
+      <button class="t-mini t-mute" data-act="mute" aria-label="声音">♪</button>
+    </div>
+  </div>
+  <div id="hint">
+    <kbd>←</kbd><kbd>→</kbd> 移动 &nbsp;·&nbsp; <kbd>↑</kbd> / <kbd>空格</kbd> 跳跃（长按跳更高）
+    &nbsp;·&nbsp; <kbd>K</kbd> / <kbd>X</kbd> 发射火球（吃火焰花后）
+    &nbsp;·&nbsp; <kbd>↓</kbd> 钻进带箭头的水管
+    &nbsp;·&nbsp; <kbd>Enter</kbd> 开始/重来 &nbsp;·&nbsp; <kbd>C</kbd> 继续已解锁关卡
+    &nbsp;·&nbsp; <kbd>P</kbd> 暂停 &nbsp;·&nbsp; <kbd>M</kbd> 音乐/音效
+    <br />
+    手机/平板可用屏幕虚拟按键（含 ▼ 钻水管、暂停、静音）；也支持程序化操控：
+    <code>EasyInput.tap('jump')</code> / <code>EasyInput.down('right')</code> / <code>EasyInput.tap('shoot')</code>
+  </div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   基础常量与工具
+   ============================================================ */
+const TILE = 32;
+const VIEW_W = 960;
+const VIEW_H = 540;
+const ROWS = 16;                 // 世界高度 16 * 32 = 512
+const FALL_LIMIT = ROWS * TILE + 200;
+// 金币换 1UP 的门槛：三关可收集金币约 250 枚，定 150 让全收集只换到 1 条命
+const COINS_PER_LIFE = 150;
+// 高 DPI：按设备像素比放大画布背板，避免高分屏发虚
+const DPR = Math.min(window.devicePixelRatio || 1, 3);
+// 系统开启“减少动态效果”时关闭震屏
+const REDUCE_MOTION = !!(window.matchMedia &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+canvas.width = Math.round(VIEW_W * DPR);
+canvas.height = Math.round(VIEW_H * DPR);
+ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+ctx.imageSmoothingEnabled = false;
+
+const clamp = (v, a, b) => v < a ? a : (v > b ? b : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+const rand = (a, b) => a + Math.random() * (b - a);
+const overlap = (a, b) =>
+  a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+
+/* ============================================================
+   输入层：键盘 + 程序化接口（easyinput 兼容）
+   ============================================================ */
+const Input = {
+  left: false,
+  right: false,
+  jump: false,
+  jumpPressed: false,   // 本帧刚按下（边沿触发）
+  shoot: false,
+  shootPressed: false,
+  down: false,          // 蹲下 / 钻水管
+  downPressed: false,
+  _jumpHeld: false,
+  _shootHeld: false,
+  _downHeld: false,
+};
+
+const DEFAULT_BINDS = {
+  left: ["ArrowLeft", "KeyA"],
+  right: ["ArrowRight", "KeyD"],
+  jump: ["ArrowUp", "KeyW", "Space", "KeyJ"],
+  down: ["ArrowDown", "KeyS"],
+  shoot: ["KeyK", "KeyX"],
+};
+const KEY_BINDS = {};
+for (const k of Object.keys(DEFAULT_BINDS)) KEY_BINDS[k] = DEFAULT_BINDS[k].slice();
+
+/** 从本机读取自定义键位（失败则用默认键位） */
+function loadBinds() {
+  try {
+    const raw = localStorage.getItem("mario_binds");
+    const obj = raw ? JSON.parse(raw) : null;
+    if (obj && typeof obj === "object") {
+      for (const k of Object.keys(DEFAULT_BINDS)) {
+        if (Array.isArray(obj[k]) && obj[k].length) KEY_BINDS[k] = obj[k].slice();
+      }
+    }
+  } catch (e) { /* 隐私模式忽略 */ }
+}
+
+function saveBinds() {
+  try { localStorage.setItem("mario_binds", JSON.stringify(KEY_BINDS)); } catch (e) {}
+}
+
+/** 按键 code → 动作名 */
+function actionForCode(code) {
+  for (const act of Object.keys(KEY_BINDS)) {
+    if (KEY_BINDS[act].indexOf(code) >= 0) return act;
+  }
+  return null;
+}
+loadBinds();
+
+function setAction(action, down) {
+  if (action === "jump") {
+    if (down && !Input._jumpHeld) Input.jumpPressed = true;
+    Input._jumpHeld = down;
+    Input.jump = down;
+  } else if (action === "shoot") {
+    if (down && !Input._shootHeld) Input.shootPressed = true;
+    Input._shootHeld = down;
+    Input.shoot = down;
+  } else if (action === "down") {
+    if (down && !Input._downHeld) Input.downPressed = true;
+    Input._downHeld = down;
+    Input.down = down;
+  } else if (action === "left" || action === "right") {
+    Input[action] = down;
+  }
+}
+
+window.addEventListener("keydown", (e) => {
+  const action = actionForCode(e.code);
+  if (action) {
+    e.preventDefault();
+    setAction(action, true);
+    return;
+  }
+  if (e.code === "Enter") { e.preventDefault(); Game.onConfirm(); }
+  if (e.code === "KeyC") { e.preventDefault(); Game.continueGame(); }
+  if (e.code === "KeyP") { e.preventDefault(); Game.togglePause(); }
+  if (e.code === "KeyR") { e.preventDefault(); Game.restartLevel(); }
+  if (e.code === "KeyM") { e.preventDefault(); Sound.toggleMute(); }
+});
+
+window.addEventListener("keyup", (e) => {
+  const action = actionForCode(e.code);
+  if (action) {
+    e.preventDefault();
+    setAction(action, false);
+  }
+});
+
+window.addEventListener("blur", () => {
+  Input.left = Input.right = Input.jump = Input._jumpHeld = false;
+  Input.shoot = Input._shootHeld = false;
+  Input.down = Input._downHeld = false;
+});
+
+/* 触屏虚拟按键：pointer 事件直接转发到输入层 */
+(function setupTouchPad() {
+  const pad = document.getElementById("touchpad");
+  const coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+  if (coarse || "ontouchstart" in window) document.body.classList.add("touch");
+  if (!pad) return;
+  pad.querySelectorAll("button").forEach((btn) => {
+    const act = btn.dataset.act;
+    // 暂停 / 静音按钮直接触发对应动作，不进输入层
+    if (act === "pause" || act === "mute") {
+      btn.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        if (act === "pause") Game.togglePause();
+        else Sound.toggleMute();
+      });
+      btn.addEventListener("contextmenu", (e) => e.preventDefault());
+      return;
+    }
+    const press = (e) => { e.preventDefault(); setAction(act, true); };
+    const release = (e) => { e.preventDefault(); setAction(act, false); };
+    btn.addEventListener("pointerdown", press);
+    btn.addEventListener("pointerup", release);
+    btn.addEventListener("pointercancel", release);
+    btn.addEventListener("pointerleave", release);
+    btn.addEventListener("contextmenu", (e) => e.preventDefault());
+  });
+})();
+
+/* 程序化操控接口：可与 easyinput 之类的自动化工具对接 */
+const EasyInput = {
+  /** 按下某个动作：left / right / jump / shoot / down */
+  down(action) { setAction(action, true); },
+  /** 松开某个动作 */
+  up(action) { setAction(action, false); },
+  /** 点按某个动作，保持 ms 毫秒 */
+  tap(action, ms = 120) {
+    setAction(action, true);
+    setTimeout(() => setAction(action, false), ms);
+    return ms;
+  },
+  /** 一次性设置状态 { left, right, jump, shoot, down } */
+  set(state) {
+    for (const k of ["left", "right", "jump", "shoot", "down"]) {
+      if (k in state) setAction(k, !!state[k]);
+    }
+  },
+  /** 松开所有按键 */
+  releaseAll() {
+    for (const k of ["left", "right", "jump", "shoot", "down"]) setAction(k, false);
+    Input.jumpPressed = false;
+    Input.shootPressed = false;
+    Input.downPressed = false;
+  },
+  /** 读取当前输入状态 */
+  state() {
+    return { left: Input.left, right: Input.right, jump: Input.jump, shoot: Input.shoot, down: Input.down };
+  },
+  /** 执行一串指令，如 [ {tap:'right',ms:600}, {tap:'jump',ms:120} ] */
+  async sequence(list) {
+    for (const step of list) {
+      if (step.tap) await new Promise((r) => setTimeout(r, EasyInput.tap(step.tap, step.ms || 120)));
+      if (step.down) EasyInput.down(step.down);
+      if (step.up) EasyInput.up(step.up);
+      if (step.wait) await new Promise((r) => setTimeout(r, step.wait));
+    }
+  },
+};
+window.EasyInput = EasyInput;
+
+/* ============================================================
+   音效：WebAudio 合成，无外部资源
+   ============================================================ */
+const Sound = {
+  ctx: null,
+  muted: false,
+  ensure() {
+    if (!this.ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) this.ctx = new AC();
+    }
+    if (this.ctx && this.ctx.state === "suspended") this.ctx.resume();
+    return this.ctx;
+  },
+  toggleMute() {
+    this.muted = !this.muted;
+    if (this.muted) Music.stop();
+    else if (Game.phase === "playing" || Game.phase === "flagdown") Music.start();
+    Game.toast(this.muted ? "静音" : "声音开");
+  },
+  blip(freq, dur = 0.1, type = "square", vol = 0.06, slideTo = null) {
+    if (this.muted) return;
+    const ac = this.ensure();
+    if (!ac) return;
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ac.currentTime);
+    if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, ac.currentTime + dur);
+    gain.gain.setValueAtTime(vol, ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + dur);
+    osc.connect(gain).connect(ac.destination);
+    osc.start();
+    osc.stop(ac.currentTime + dur + 0.02);
+  },
+  jump() { this.blip(420, 0.14, "square", 0.05, 720); },
+  coin() { this.blip(900, 0.08, "triangle", 0.06, 1400); },
+  powerup() {
+    [660, 880, 1180].forEach((f, i) =>
+      setTimeout(() => this.blip(f, 0.12, "triangle", 0.06), i * 70));
+  },
+  starPick() {
+    [523, 659, 784, 1046, 1318].forEach((f, i) =>
+      setTimeout(() => this.blip(f, 0.1, "square", 0.05), i * 60));
+  },
+  stomp() { this.blip(200, 0.1, "square", 0.07, 90); },
+  fire() { this.blip(520, 0.09, "sawtooth", 0.05, 260); },
+  bump() { this.blip(160, 0.07, "square", 0.05, 120); },
+  crash() {
+    this.blip(220, 0.09, "sawtooth", 0.06, 70);
+    setTimeout(() => this.blip(120, 0.14, "square", 0.05, 60), 40);
+  },
+  hurt() { this.blip(300, 0.35, "sawtooth", 0.07, 80); },
+  pipeDown() {
+    this.blip(520, 0.34, "square", 0.055, 110);
+    setTimeout(() => this.blip(260, 0.1, "triangle", 0.04), 180);
+  },
+  pipeUp() {
+    this.blip(120, 0.34, "square", 0.055, 560);
+    setTimeout(() => this.blip(760, 0.1, "triangle", 0.04), 200);
+  },
+  clear() {
+    [523, 659, 784, 1046].forEach((f, i) =>
+      setTimeout(() => this.blip(f, 0.16, "triangle", 0.06), i * 110));
+  },
+  gameover() {
+    [400, 330, 260, 180].forEach((f, i) =>
+      setTimeout(() => this.blip(f, 0.24, "sawtooth", 0.06), i * 150));
+  },
+};
+
+/* ============================================================
+   8-bit 循环 BGM：用 WebAudio 定时调度音符，无外部音频文件
+   ============================================================ */
+const Music = {
+  on: false,
+  timer: null,
+  nextTime: 0,
+  step: 0,
+  beat: 0.19,
+  // C 大调小圆舞曲式的简单循环旋律（0 表示休止）
+  melody: [
+    659, 0, 784, 659, 523, 0, 587, 494,
+    523, 659, 784, 1046, 0, 880, 784, 659,
+    523, 0, 587, 659, 784, 0, 880, 784,
+    659, 587, 523, 0, 440, 523, 587, 659,
+  ],
+  bass: [131, 165, 196, 175],
+  // 地下金币房：更快、更低的低音小调循环
+  bonusMelody: [
+    196, 0, 233, 196, 175, 0, 196, 233,
+    262, 0, 233, 196, 175, 0, 165, 175,
+  ],
+  bonusBass: [98, 87, 92, 82],
+  bonusBeat: 0.13,
+  bonus: false,
+
+  /** 切换地面 / 地下曲风；不会重启已停止的音乐 */
+  setScene(isBonus) {
+    isBonus = !!isBonus;
+    if (this.bonus === isBonus) return;
+    this.bonus = isBonus;
+    this.step = 0;
+    if (this.on && Sound.ctx) this.nextTime = Sound.ctx.currentTime + 0.05;
+  },
+
+  get track() {
+    return this.bonus
+      ? { melody: this.bonusMelody, bass: this.bonusBass, beat: this.bonusBeat }
+      : { melody: this.melody, bass: this.bass, beat: this.beat };
+  },
+
+  start() {
+    if (this.on || Sound.muted) return;
+    const ac = Sound.ensure();
+    if (!ac) return;
+    this.on = true;
+    this.step = 0;
+    this.nextTime = ac.currentTime + 0.08;
+    this.timer = setInterval(() => this.schedule(), 60);
+  },
+
+  stop() {
+    this.on = false;
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+  },
+
+  schedule() {
+    const ac = Sound.ctx;
+    if (!ac || !this.on) return;
+    if (Sound.muted) { this.nextTime = ac.currentTime + 0.1; return; }
+    try {
+      const tr = this.track;
+      while (this.nextTime < ac.currentTime + 0.35) {
+        const i = this.step % tr.melody.length;
+        const f = tr.melody[i];
+        if (f) this.note(f, this.nextTime, tr.beat * 0.85, "square", 0.024);
+        if (i % 4 === 0) {
+          const b = tr.bass[(this.step / 4 | 0) % tr.bass.length];
+          this.note(b, this.nextTime, tr.beat * 3.6, "triangle", 0.03);
+        }
+        this.nextTime += tr.beat;
+        this.step++;
+      }
+    } catch (e) { /* 音频不可用时静默 */ }
+  },
+
+  note(freq, when, dur, type, vol) {
+    const ac = Sound.ctx;
+    if (!ac) return;
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, when);
+    gain.gain.setValueAtTime(0.0001, when);
+    gain.gain.linearRampToValueAtTime(vol, when + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+    osc.connect(gain).connect(ac.destination);
+    osc.start(when);
+    osc.stop(when + dur + 0.02);
+  },
+};
+
+/* ============================================================
+   关卡数据（瓦片地图，由构建器生成）
+   瓦片编码：0 空 / 1 地面 / 2 砖块 / 3 问号砖 / 4 石块
+   ============================================================ */
+const T = { EMPTY: 0, GROUND: 1, BRICK: 2, QUESTION: 3, STONE: 4, PIPE: 5, HIDDEN: 6 };
+const SOLID = new Set([T.GROUND, T.BRICK, T.QUESTION, T.STONE, T.PIPE, T.HIDDEN]);
+
+function makeLevel(spec) {
+  const width = spec.width;
+  const grid = [];
+  for (let y = 0; y < ROWS; y++) grid.push(new Array(width).fill(T.EMPTY));
+
+  const set = (x, y, v) => {
+    if (x >= 0 && x < width && y >= 0 && y < ROWS) grid[y][x] = v;
+  };
+
+  // 地面（row 13 起到底部）
+  for (const [a, b] of spec.ground) {
+    for (let x = a; x <= b; x++) {
+      for (let y = 13; y < ROWS; y++) set(x, y, T.GROUND);
+    }
+  }
+  // 平台 / 砖块
+  for (const p of spec.platforms || []) {
+    const code = p.type === "stone" ? T.STONE : T.BRICK;
+    for (let x = p.x; x < p.x + (p.w || 1); x++) set(x, p.y, code);
+  }
+  // 问号砖
+  for (const [x, y] of spec.qblocks || []) set(x, y, T.QUESTION);
+  // 水管（实心柱体）
+  for (const [x, h, w] of spec.pipes || []) {
+    for (let dx = 0; dx < (w || 1); dx++) {
+      for (let y = 13 - h; y <= 12; y++) set(x + dx, y, T.PIPE);
+    }
+  }
+
+  // 地下关卡的天花板
+  for (const [a, b] of spec.ceiling || []) {
+    for (let x = a; x <= b; x++) {
+      for (let y = 0; y <= 2; y++) set(x, y, T.STONE);
+    }
+  }
+
+  // 道具砖（问号砖里有蘑菇 / 无敌星 / 火焰花）
+  const powers = new Map();
+  for (const [x, y] of spec.mushrooms || []) {
+    set(x, y, T.QUESTION);
+    powers.set(x + "," + y, "mushroom");
+  }
+  for (const [x, y] of spec.stars || []) {
+    set(x, y, T.QUESTION);
+    powers.set(x + "," + y, "star");
+  }
+  for (const [x, y] of spec.flowers || []) {
+    set(x, y, T.QUESTION);
+    powers.set(x + "," + y, "flower");
+  }
+
+  // 隐藏砖：平时看不见但实心，顶到才现形
+  const hidden = new Set();
+  for (const [x, y] of spec.hidden || []) {
+    set(x, y, T.HIDDEN);
+    hidden.add(x + "," + y);
+  }
+  const hidden1up = new Set();
+  for (const [x, y] of spec.hidden1up || []) {
+    set(x, y, T.HIDDEN);
+    hidden1up.add(x + "," + y);
+  }
+
+  // 多段金币砖：可以连续顶 3~5 次
+  const multi = new Map();
+  for (const [x, y, n] of spec.multiCoins || []) {
+    set(x, y, T.BRICK);
+    multi.set(x + "," + y, n || 3);
+  }
+
+  // 关底 Boss：在城门前的竞技场里来回巡逻
+  let boss = null;
+  if (spec.boss) {
+    const bw = 64, bh = 64;
+    boss = {
+      x: spec.boss.x * TILE, y: 13 * TILE - bh,
+      w: bw, h: bh,
+      vx: -70, vy: 0,
+      hp: spec.boss.hp || 3, maxHp: spec.boss.hp || 3,
+      invuln: 0, alive: true, deadT: 0, anim: 0,
+      minX: (spec.boss.left || spec.boss.x - 1) * TILE,
+      maxX: (spec.boss.right || spec.boss.x + 1) * TILE - bw,
+    };
+  }
+
+  // Boss 把守的城门：Boss 倒下后才打开
+  const gateCells = [];
+  if (spec.bossGate) {
+    const [gx, gy, gw, gh] = spec.bossGate;
+    for (let x = gx; x < gx + gw; x++) {
+      for (let y = gy; y < gy + gh; y++) {
+        set(x, y, T.STONE);
+        gateCells.push([x, y]);
+      }
+    }
+  }
+
+  return {
+    name: spec.name,
+    width,
+    time: spec.time,
+    isBonus: !!spec.isBonus,
+    grid,
+    powers,
+    hidden,
+    hidden1up,
+    multi,
+    boss,
+    gateCells,
+    items: [],
+    coins: (spec.coins || []).map(([x, y]) => ({
+      x: x * TILE + TILE / 2, y: y * TILE + TILE / 2, taken: false, phase: Math.random() * 6,
+    })),
+    enemies: (spec.enemies || []).map((e) => {
+      const type = e.type || "goomba";
+      const koopa = type === "koopa";
+      const flyer = type === "flyer";
+      const ent = {
+        x: e.x * TILE + 4, y: e.y * TILE + (koopa || flyer ? 4 : 6),
+        w: 24, h: koopa || flyer ? 28 : 26,
+        vx: (e.dir || -1) * (koopa || flyer ? 46 : 52), vy: 0,
+        type, state: "walk", shellCd: 0, dead: 0, alive: true, anim: 0,
+      };
+      if (flyer) {
+        // 飞行龟：正弦上下浮动 + 在一定范围内横向巡逻
+        ent.y0 = ent.y;
+        ent.flyT = Math.random() * 6;
+        ent.flyAmp = (e.amp || 1.4) * TILE;
+        ent.minX = (e.x - (e.range || 2)) * TILE;
+        ent.maxX = (e.x + (e.range || 2)) * TILE;
+        ent.vx = (e.dir || 1) * 58;
+      }
+      return ent;
+    }),
+    // 弹簧（踩上去高高弹起）
+    springs: (spec.springs || []).map(([x]) => ({
+      x: x * TILE + 2, y: 13 * TILE - 14, w: 28, h: 14, squash: 0,
+    })),
+    // 移动平台：axis "y" 上下升降（默认），axis "x" 左右往返
+    lifts: (spec.lifts || []).map((l) => ({
+      x: l.x * TILE, y: l.y * TILE, w: (l.w || 2) * TILE, h: 12,
+      x0: l.x * TILE, y0: l.y * TILE, axis: l.axis === "x" ? "x" : "y",
+      range: (l.range || 3) * TILE, speed: l.speed || 0.8,
+      t: 0, dx: 0, dy: 0,
+    })),
+    // 炮台：定时朝玩家方向吐子弹
+    cannons: (spec.cannons || []).map((c) => ({
+      x: c.x * TILE + 2, y: (c.y === undefined ? 12 : c.y) * TILE, w: 28, h: 32,
+      cd: 0.7 + Math.random() * 1.1, interval: c.interval || 2.4,
+      alive: true, anim: 0, fireT: 0, dir: 1,
+    })),
+    bullets: [],
+    // 水管入口（x, 顶行, 宽度）
+    pipeDowns: (spec.pipeDown || []).map(([x, ty, w]) => ({
+      x: x * TILE, topY: ty * TILE, w: (w || 2) * TILE,
+    })),
+    checkpointX: spec.checkpoint ? spec.checkpoint * TILE : 0,
+    flagX: spec.flagX * TILE,
+    startX: (spec.startX || 2) * TILE,
+    past: new Set(),
+  };
+}
+
+const LEVEL_SPECS = [
+  {
+    name: "1-1 草原起程",
+    width: 96, time: 150, startX: 2, flagX: 92, checkpoint: 48,
+    ground: [[0, 26], [30, 56], [60, 95]],
+    platforms: [
+      { x: 10, y: 9, w: 5, type: "brick" },
+      { x: 20, y: 7, w: 3, type: "brick" },
+      { x: 36, y: 9, w: 4, type: "brick" },
+      { x: 44, y: 7, w: 3, type: "brick" },
+      { x: 66, y: 9, w: 6, type: "brick" },
+      { x: 76, y: 7, w: 4, type: "stone" },
+      { x: 84, y: 6, w: 3, type: "brick" },
+    ],
+    qblocks: [[12, 9], [14, 9], [38, 9], [46, 7], [68, 9], [70, 9], [86, 6]],
+    mushrooms: [[24, 9]],
+    stars: [[72, 9]],
+    flowers: [[30, 9]],
+    hidden: [[6, 9], [8, 9]],
+    hidden1up: [[32, 5]],
+    multiCoins: [[19, 9, 4], [50, 9, 3]],
+    springs: [[33], [63]],
+    lifts: [{ x: 57, y: 11, range: 3, speed: 0.9 }],
+    pipes: [[17, 2, 2], [52, 3, 2], [80, 2, 2]],
+    pipeDown: [[80, 11, 2]],
+    coins: [
+      [5, 11], [6, 11], [7, 11],
+      [11, 7], [12, 7], [13, 7], [14, 7], [15, 7],
+      [21, 5], [22, 5], [23, 5],
+      [31, 11], [32, 11],
+      [37, 7], [38, 7], [39, 7],
+      [45, 5], [46, 5],
+      [61, 11], [62, 11], [63, 11],
+      [67, 7], [68, 7], [69, 7],
+      [77, 5], [78, 5], [79, 5],
+      [85, 4], [86, 4],
+    ],
+    enemies: [
+      { x: 22, y: 12 }, { x: 33, y: 12 }, { x: 41, y: 12 },
+      { x: 48, y: 12 }, { x: 63, y: 12 }, { x: 73, y: 12 }, { x: 88, y: 12 },
+      { x: 45, y: 12, type: "koopa" }, { x: 68, y: 12, type: "koopa" },
+    ],
+  },
+  {
+    name: "1-2 断桥高塔",
+    width: 112, time: 160, startX: 2, flagX: 108, checkpoint: 60,
+    ground: [[0, 20], [24, 44], [50, 70], [74, 111]],
+    platforms: [
+      { x: 6, y: 8, w: 4, type: "brick" },
+      { x: 12, y: 6, w: 3, type: "brick" },
+      { x: 21, y: 9, w: 3, type: "stone" },
+      { x: 29, y: 8, w: 5, type: "brick" },
+      { x: 38, y: 6, w: 4, type: "brick" },
+      { x: 45, y: 8, w: 3, type: "stone" },
+      { x: 51, y: 7, w: 5, type: "brick" },
+      { x: 60, y: 5, w: 4, type: "brick" },
+      { x: 71, y: 8, w: 3, type: "stone" },
+      { x: 78, y: 9, w: 6, type: "brick" },
+      { x: 88, y: 7, w: 4, type: "brick" },
+      { x: 96, y: 5, w: 3, type: "brick" },
+      { x: 102, y: 8, w: 4, type: "stone" },
+    ],
+    qblocks: [[7, 8], [13, 6], [30, 8], [39, 6], [52, 7], [61, 5], [80, 9], [89, 7], [97, 5]],
+    mushrooms: [[35, 8]],
+    stars: [[86, 7]],
+    flowers: [[26, 8]],
+    hidden: [[4, 7], [50, 6]],
+    hidden1up: [[94, 6]],
+    multiCoins: [[23, 7, 4], [72, 6, 3]],
+    springs: [[36], [66]],
+    lifts: [{ x: 84, y: 10, range: 3, speed: 0.75 }, { x: 45, y: 11, w: 2, range: 3, speed: 0.9, axis: "x" }],
+    cannons: [{ x: 30, y: 12 }, { x: 88, y: 6 }],
+    pipes: [[16, 2, 2], [56, 2, 2], [92, 3, 2]],
+    pipeDown: [[56, 11, 2]],
+    coins: [
+      [3, 11], [4, 11],
+      [7, 6], [8, 6],
+      [13, 4], [14, 4],
+      [21, 7], [22, 7],
+      [31, 6], [32, 6], [33, 6],
+      [39, 4], [40, 4],
+      [45, 7], [46, 7],
+      [52, 5], [53, 5], [54, 5],
+      [61, 3], [62, 3],
+      [71, 6], [72, 6],
+      [79, 7], [80, 7], [81, 7],
+      [89, 5], [90, 5],
+      [97, 3], [98, 3],
+      [103, 6], [104, 6],
+      [106, 11], [107, 11],
+    ],
+    enemies: [
+      { x: 10, y: 12 }, { x: 19, y: 12 }, { x: 27, y: 12 },
+      { x: 35, y: 12 }, { x: 42, y: 12 }, { x: 50, y: 12 },
+      { x: 58, y: 12 }, { x: 64, y: 12 }, { x: 76, y: 12 },
+      { x: 83, y: 12 }, { x: 85, y: 12 }, { x: 99, y: 12 }, { x: 106, y: 12 },
+      { x: 40, y: 12, type: "koopa" }, { x: 79, y: 12, type: "koopa" },
+      { x: 22, y: 7, type: "flyer", range: 3, amp: 1.2 },
+      { x: 50, y: 5, type: "flyer", dir: 1, range: 4, amp: 1.5 },
+    ],
+  },
+  {
+    name: "1-3 终局堡垒",
+    width: 128, time: 180, startX: 2, flagX: 124, checkpoint: 100,
+    boss: { x: 112, hp: 5, left: 111, right: 117 },
+    bossGate: [118, 7, 2, 6],
+    ground: [[0, 18], [22, 34], [38, 52], [57, 74], [78, 96], [100, 127]],
+    platforms: [
+      { x: 4, y: 7, w: 4, type: "brick" },
+      { x: 11, y: 5, w: 3, type: "brick" },
+      { x: 19, y: 9, w: 4, type: "stone" },
+      { x: 26, y: 7, w: 5, type: "brick" },
+      { x: 35, y: 9, w: 4, type: "stone" },
+      { x: 42, y: 6, w: 4, type: "brick" },
+      { x: 49, y: 8, w: 4, type: "stone" },
+      { x: 58, y: 5, w: 3, type: "brick" },
+      { x: 63, y: 8, w: 6, type: "brick" },
+      { x: 75, y: 9, w: 4, type: "stone" },
+      { x: 82, y: 6, w: 5, type: "brick" },
+      { x: 91, y: 4, w: 3, type: "brick" },
+      { x: 97, y: 9, w: 4, type: "stone" },
+      { x: 104, y: 7, w: 5, type: "brick" },
+      { x: 113, y: 5, w: 4, type: "brick" },
+      { x: 120, y: 8, w: 3, type: "stone" },
+    ],
+    qblocks: [[5, 7], [12, 5], [27, 7], [43, 6], [59, 5], [64, 8], [83, 6], [92, 4], [105, 7], [114, 5]],
+    mushrooms: [[72, 7]],
+    stars: [[102, 9]],
+    flowers: [[40, 9]],
+    hidden: [[3, 8], [55, 8]],
+    hidden1up: [[89, 8]],
+    multiCoins: [[33, 6, 5], [99, 7, 4]],
+    springs: [[13], [60], [106]],
+    lifts: [{ x: 53, y: 11, w: 2, range: 3, speed: 0.9, axis: "x" }],
+    cannons: [{ x: 26, y: 12 }, { x: 82, y: 5 }],
+    pipes: [[8, 2, 2], [30, 3, 2], [46, 2, 2], [67, 3, 2], [87, 2, 2], [109, 3, 2]],
+    pipeDown: [[46, 11, 2]],
+    coins: [
+      [3, 11], [4, 11],
+      [5, 5], [6, 5],
+      [12, 3], [13, 3],
+      [19, 7], [20, 7],
+      [27, 5], [28, 5], [29, 5],
+      [35, 7], [36, 7],
+      [43, 4], [44, 4],
+      [49, 6], [50, 6],
+      [59, 3], [60, 3],
+      [64, 6], [65, 6], [66, 6],
+      [75, 7], [76, 7],
+      [83, 4], [84, 4], [85, 4],
+      [92, 2], [93, 2],
+      [97, 7], [98, 7],
+      [105, 5], [106, 5], [107, 5],
+      [114, 3], [115, 3],
+      [120, 6], [121, 6],
+      [120, 11], [121, 11],
+    ],
+    enemies: [
+      { x: 6, y: 12 }, { x: 15, y: 12 }, { x: 25, y: 12 },
+      { x: 29, y: 12 }, { x: 40, y: 12 }, { x: 50, y: 12 },
+      { x: 66, y: 12 }, { x: 62, y: 12 }, { x: 70, y: 12 },
+      { x: 80, y: 12 }, { x: 84, y: 12 }, { x: 90, y: 12 },
+      { x: 101, y: 12 }, { x: 104, y: 12 }, { x: 111, y: 12 }, { x: 118, y: 12 },
+      { x: 44, y: 12, type: "koopa" }, { x: 95, y: 12, type: "koopa" },
+      { x: 106, y: 10, type: "flyer", range: 1, amp: 1.5 },
+      { x: 90, y: 5, type: "flyer", dir: 1, range: 4, amp: 1.6 },
+    ],
+  },
+];
+
+/* 地下金币房：从水管钻进去的奖励关，走到右侧出口回到地面 */
+const BONUS_SPEC = {
+  name: "地下金币房",
+  width: 60, time: 70, startX: 2, flagX: 58, isBonus: true,
+  ceiling: [[0, 59]],
+  ground: [[0, 59]],
+  platforms: [
+    { x: 8, y: 10, w: 4, type: "stone" },
+    { x: 16, y: 8, w: 4, type: "brick" },
+    { x: 24, y: 10, w: 5, type: "stone" },
+    { x: 33, y: 8, w: 5, type: "brick" },
+    { x: 42, y: 10, w: 4, type: "stone" },
+    { x: 50, y: 8, w: 5, type: "brick" },
+  ],
+  qblocks: [[12, 9], [28, 9], [46, 9]],
+  multiCoins: [[22, 9, 5], [38, 9, 4]],
+  hidden1up: [[36, 6]],
+  coins: [
+    [4, 11], [5, 11], [6, 11], [7, 11],
+    [9, 8], [10, 8], [11, 8],
+    [17, 6], [18, 6], [19, 6],
+    [25, 8], [26, 8], [27, 8],
+    [33, 6], [34, 6], [35, 6],
+    [43, 8], [44, 8], [45, 8],
+    [51, 6], [52, 6], [53, 6],
+    [55, 11], [56, 11], [57, 11],
+  ],
+};
+
+/* ============================================================
+   游戏状态
+   ============================================================ */
+const Game = {
+  phase: "title",          // title | playing | paused | flagdown | levelclear | gameover | win
+  levelIndex: 0,
+  score: 0,
+  lives: 3,
+  coins: 0,
+  best: 0,
+  timeLeft: 0,
+  camX: 0,
+  toastText: "",
+  toastTimer: 0,
+  clearTimer: 0,
+  clearData: null,
+  checkpointX: 0,
+  checkpointActive: false,
+  inBonus: false,
+  returnState: null,
+  pipeCooldown: 0,
+  pipeAnim: null,          // 进出水管的 0.4s 动画
+  pendingPipe: null,       // 进管前记下的落脚点
+  unlocked: 0,             // 已解锁的最高关卡索引（标题界面“继续游戏”用）
+  levelBests: {},          // 各关最高分
+  levelStartScore: 0,      // 进入本关时的总分，用于算本关得分
+  newRecord: false,
+  shake: 0,
+  tick: 0,
+  bumps: [],
+  fx: [],
+  pops: [],                // 飘分文字
+  combo: 0,                // 空中连踩计数
+  debris: [],
+  fireballs: [],
+  starTrail: [],           // 无敌星残影
+
+  get level() { return this._level; },
+
+  /** 读取本机最高分（隐私模式下静默失败） */
+  loadBest() {
+    try {
+      const v = parseInt(localStorage.getItem("mario_best") || "0", 10);
+      this.best = Number.isFinite(v) ? v : 0;
+    } catch (e) {
+      this.best = 0;
+    }
+  },
+
+  /** 写入最高分 */
+  saveBest() {
+    try {
+      if (this.score > this.best) this.best = this.score;
+      localStorage.setItem("mario_best", String(this.best));
+    } catch (e) {
+      if (this.score > this.best) this.best = this.score;
+    }
+  },
+
+  /** 读取关卡进度：已解锁关卡 + 各关最高分 */
+  loadProgress() {
+    try {
+      const u = parseInt(localStorage.getItem("mario_unlocked") || "0", 10);
+      this.unlocked = Number.isFinite(u) ? clamp(u, 0, LEVEL_SPECS.length - 1) : 0;
+      const raw = localStorage.getItem("mario_level_bests");
+      const arr = raw ? JSON.parse(raw) : null;
+      this.levelBests = arr && typeof arr === "object" ? arr : {};
+    } catch (e) {
+      this.unlocked = 0;
+      this.levelBests = {};
+    }
+  },
+
+  /** 写入关卡进度 */
+  saveProgress() {
+    try {
+      localStorage.setItem("mario_unlocked", String(this.unlocked));
+      localStorage.setItem("mario_level_bests", JSON.stringify(this.levelBests));
+    } catch (e) { /* 隐私模式静默失败 */ }
+  },
+
+  /** 标题界面按 C：从已解锁的最后一关继续 */
+  continueGame() {
+    if (this.phase !== "title") return;
+    const idx = clamp(this.unlocked || 0, 0, LEVEL_SPECS.length - 1);
+    this.score = 0; this.lives = 3; this.coins = 0;
+    this.loadLevel(idx);
+    Sound.ensure();
+    Music.start();
+    this.toast("从第 " + (idx + 1) + " 关继续");
+  },
+
+  /** 金币统一入口：满 COINS_PER_LIFE 枚换 1UP */
+  addCoin(n = 1) {
+    this.coins += n;
+    while (this.coins >= COINS_PER_LIFE) {
+      this.coins -= COINS_PER_LIFE;
+      this.lives += 1;
+      this.toast("1UP！" + COINS_PER_LIFE + " 金币换一条命");
+      Sound.starPick();
+    }
+  },
+
+  /** 加载关卡；opts: { respawnX, respawnY, keepCheckpoint } */
+  loadLevel(index, opts = {}) {
+    const { respawnX, respawnY, keepCheckpoint = false } = opts;
+    this.inBonus = false;
+    this.returnState = null;
+    this.levelIndex = clamp(index, 0, LEVEL_SPECS.length - 1);
+    this._level = makeLevel(LEVEL_SPECS[this.levelIndex]);
+    this.timeLeft = this._level.time;
+    this.levelStartScore = this.score;
+    this.clearTimer = 0;
+    this.clearData = null;
+    this.pipeAnim = null;
+    this.pendingPipe = null;
+    this.starTrail = [];
+    Music.setScene(false);
+    if (!keepCheckpoint) {
+      // 未激活存档点前，死亡都从关卡起点复活
+      this.checkpointX = this._level.startX;
+      this.checkpointActive = false;
+    }
+    const sx = respawnX !== undefined ? respawnX : this._level.startX;
+    this.spawnPlayer(sx, respawnY);
+    this.camX = clamp(sx + 12 - VIEW_W * 0.42, 0, this._level.width * TILE - VIEW_W);
+    this.bumps = [];
+    this.fx = [];
+    this.pops = [];
+    this.debris = [];
+    this.fireballs = [];
+    this.pipeCooldown = 0;
+    this.combo = 0;
+    this.phase = "playing";
+  },
+
+  spawnPlayer(x, y) {
+    const big = this.player ? this.player.big : false;
+    const fire = this.player ? !!this.player.fire : false;
+    const star = this.player ? this.player.star : 0;
+    const h = big ? 46 : 30;
+    this.player = {
+      x: x, y: y === undefined ? 13 * TILE - h : y, w: 24, h,
+      vx: 0, vy: 0, dir: 1, big, fire, star,
+      onGround: false, coyote: 0, jumpBuffer: 0, onLift: null,
+      invuln: 1.2, animTime: 0, dead: false, deadTimer: 0, shootCd: 0,
+    };
+  },
+
+  toast(text) {
+    this.toastText = text;
+    this.toastTimer = 1.4;
+  },
+
+  onConfirm() {
+    if (this.phase === "title") {
+      this.score = 0; this.lives = 3; this.coins = 0;
+      this.loadLevel(0);
+      Sound.ensure();
+      Music.start();
+    } else if (this.phase === "gameover" || this.phase === "win") {
+      this.score = 0; this.lives = 3; this.coins = 0;
+      this.loadLevel(0);
+      Music.start();
+    }
+  },
+
+  togglePause() {
+    if (this.phase === "playing") {
+      this.phase = "paused";
+      Music.stop();              // 暂停时背景音乐也停下
+    } else if (this.phase === "paused") {
+      this.phase = "playing";
+      Music.start();
+    }
+  },
+
+  restartLevel() {
+    if (this.phase === "playing" || this.phase === "paused") {
+      this.loadLevel(this.levelIndex);
+      this.toast("重来本关");
+    }
+  },
+
+  nextLevel() {
+    this.saveBest();
+    // 进入下一关：保留大个头，但不再带走火焰花与无敌星，
+    // 否则在 1-1 吃到火焰花就能把后两关的难度抹平
+    if (this.player) { this.player.fire = false; this.player.star = 0; }
+    if (this.levelIndex + 1 >= LEVEL_SPECS.length) {
+      this.phase = "win";
+      Sound.clear();
+      Music.stop();
+    } else {
+      this.loadLevel(this.levelIndex + 1);
+    }
+  },
+
+  /** 钻进水管：先播 0.4s 下沉动画，再切换到地下金币房 */
+  startPipeIn() {
+    const p = this.player;
+    this.pendingPipe = { x: p.x, y: p.y };
+    p.vx = 0; p.vy = 0; p.onGround = true;
+    this.pipeAnim = { mode: "in", t: 0, dur: 0.4 };
+    Sound.pipeDown();
+  },
+
+  /** 钻进水管：进入地下金币房，记下返回时的位置与状态 */
+  loadBonus() {
+    const p = this.player;
+    const src = this.pendingPipe || { x: p.x, y: p.y };
+    this.returnState = {
+      levelIndex: this.levelIndex, x: src.x, y: src.y,
+      timeLeft: this.timeLeft, checkpointX: this.checkpointX,
+    };
+    this.pendingPipe = null;
+    this.pipeAnim = null;
+    this.inBonus = true;
+    this._level = makeLevel(BONUS_SPEC);
+    this.timeLeft = BONUS_SPEC.time;
+    this.camX = 0;
+    this.clearTimer = 0;
+    this.clearData = null;
+    this.bumps = [];
+    this.fx = [];
+    this.pops = [];
+    this.debris = [];
+    this.fireballs = [];
+    this.combo = 0;
+    this.starTrail = [];
+    this.spawnPlayer(BONUS_SPEC.startX * TILE);
+    this.pipeCooldown = 0.5;
+    Music.setScene(true);
+    this.toast("进入地下金币房");
+    Sound.powerup();
+  },
+
+  /** 从金币房右侧出口回到地面，位置与剩余时间完全还原 */
+  exitBonus() {
+    const rs = this.returnState;
+    if (!rs) return;
+    this.inBonus = false;
+    this.returnState = null;
+    this._level = makeLevel(LEVEL_SPECS[rs.levelIndex]);
+    this.timeLeft = rs.timeLeft;
+    this.checkpointX = rs.checkpointX;
+    this.bumps = [];
+    this.fx = [];
+    this.pops = [];
+    this.debris = [];
+    this.fireballs = [];
+    this.combo = 0;
+    this.starTrail = [];
+    // 从水管里升起：先藏在管口，再向上冒出
+    this.spawnPlayer(rs.x, rs.y + 26);
+    this.pipeAnim = { mode: "out", t: 0, dur: 0.4, startY: rs.y + 26, targetY: rs.y };
+    this.camX = clamp(rs.x + 12 - VIEW_W * 0.42, 0, this._level.width * TILE - VIEW_W);
+    this.pipeCooldown = 1.0;
+    Music.setScene(false);
+    Sound.pipeUp();
+    this.toast("带着金币回到地面");
+    Sound.coin();
+    this.saveBest();
+  },
+
+  /** 碰到旗杆：先顺着杆子滑下，再逐条结算 */
+  startFlagDown() {
+    const p = this.player;
+    const lv = this.level;
+    this.phase = "flagdown";
+    p.x = lv.flagX - 14;
+    p.vx = 0; p.vy = 240; p.onGround = false;
+    this.score += 500;
+    spawnParticles(lv.flagX + 8, 5 * TILE, "#ffe066", 22, 210);
+    Sound.clear();
+  },
+
+  updateFlagDown(dt) {
+    const p = this.player;
+    const floor = 13 * TILE - p.h;
+    p.y = Math.min(p.y + 260 * dt, floor);
+    if (p.y >= floor) this.beginSettlement();
+  },
+
+  beginSettlement() {
+    const secs = Math.max(0, Math.floor(this.timeLeft));
+    const idx = this.levelIndex;
+    const lvScore = Math.max(0, this.score - this.levelStartScore);
+    const prevBest = this.levelBests[idx] || 0;
+    const record = lvScore > prevBest;
+    if (record) this.levelBests[idx] = lvScore;
+    this.unlocked = Math.min(LEVEL_SPECS.length - 1, Math.max(this.unlocked, idx + 1));
+    this.newRecord = record;
+    this.saveProgress();
+    this.phase = "levelclear";
+    this.clearData = {
+      t: 0,
+      total: 1.1 + secs / 60 + 1.4,
+      bonus: secs,
+      step: 0,
+      gained: 0,
+      flagBonus: 500,
+      lvScore,
+      levelBest: this.levelBests[idx],
+      newRecord: record,
+    };
+    this.saveBest();
+  },
+
+  loseLife() {
+    this.lives -= 1;
+    if (this.player) { this.player.big = false; this.player.fire = false; this.player.star = 0; }
+    this.saveBest();
+    if (this.lives <= 0) {
+      this.phase = "gameover";
+      Sound.gameover();
+      Music.stop();
+    } else {
+      let idx = this.levelIndex;
+      let sx = this.checkpointX;
+      if (this.inBonus && this.returnState) {
+        // 在地下房里阵亡：回到地面关卡，从碰到的存档点复活
+        idx = this.returnState.levelIndex;
+        sx = this.returnState.checkpointX || this.returnState.x;
+        this.levelIndex = idx;
+        this.checkpointX = sx;
+        this.inBonus = false;
+        this.returnState = null;
+      }
+      this.loadLevel(idx, { respawnX: sx, keepCheckpoint: true });
+      this.toast("剩余生命 " + this.lives + "　从存档点继续");
+    }
+  },
+};
+
+/* ============================================================
+   物理与瓦片碰撞
+   ============================================================ */
+function tileCode(tx, ty) {
+  const lv = Game.level;
+  if (!lv) return T.EMPTY;
+  if (ty < 0 || ty >= ROWS) return T.EMPTY;
+  if (tx < 0 || tx >= lv.width) return T.STONE;   // 左右边界当作墙
+  return lv.grid[ty][tx];
+}
+const isSolid = (tx, ty) => SOLID.has(tileCode(tx, ty));
+
+/** 水平移动 + 碰撞，返回是否被挡住（-1 左侧 / 1 右侧 / 0 未挡） */
+function moveX(e, dx) {
+  if (dx === 0) return 0;
+  e.x += dx;
+  const y0 = Math.floor(e.y / TILE);
+  const y1 = Math.floor((e.y + e.h - 0.01) / TILE);
+  if (dx > 0) {
+    const tx = Math.floor((e.x + e.w - 0.01) / TILE);
+    for (let ty = y0; ty <= y1; ty++) {
+      if (isSolid(tx, ty)) { e.x = tx * TILE - e.w; return 1; }
+    }
+  } else {
+    const tx = Math.floor(e.x / TILE);
+    for (let ty = y0; ty <= y1; ty++) {
+      if (isSolid(tx, ty)) { e.x = (tx + 1) * TILE; return -1; }
+    }
+  }
+  return 0;
+}
+
+/** 垂直移动 + 碰撞，返回 1 落地 / -1 顶到天花板 / 0 无 */
+function moveY(e, dy) {
+  if (dy === 0) return 0;
+  e.y += dy;
+  const x0 = Math.floor(e.x / TILE);
+  const x1 = Math.floor((e.x + e.w - 0.01) / TILE);
+  if (dy > 0) {
+    const ty = Math.floor((e.y + e.h - 0.01) / TILE);
+    for (let tx = x0; tx <= x1; tx++) {
+      if (isSolid(tx, ty)) { e.y = ty * TILE - e.h; return 1; }
+    }
+  } else {
+    const ty = Math.floor(e.y / TILE);
+    for (let tx = x0; tx <= x1; tx++) {
+      if (isSolid(tx, ty)) {
+        e.y = (ty + 1) * TILE;
+        e.headHit = { tx, ty };
+        return -1;
+      }
+    }
+  }
+  return 0;
+}
+
+/* ============================================================
+   特效与砖块反馈
+   ============================================================ */
+function spawnParticles(x, y, color, count, speed = 150) {
+  for (let i = 0; i < count; i++) {
+    Game.fx.push({
+      x, y,
+      vx: rand(-speed, speed),
+      vy: rand(-speed, -speed * 0.2),
+      life: rand(0.35, 0.7), max: 0.7,
+      color, size: rand(2, 5),
+    });
+  }
+}
+
+/** 飘分文字：向上飘一小段后淡出 */
+function addPop(text, x, y, color = "#ffe066") {
+  Game.pops.push({ text, x, y, vy: -62, life: 0.95, max: 0.95, color });
+}
+
+/** 连续踩怪计分：100 / 200 / 400 … 封顶 8000，连踩 8 只额外 1UP */
+function stompScore(e) {
+  const n = Game.combo || 0;
+  const pts = Math.min(100 * Math.pow(2, n), 8000);
+  Game.score += pts;
+  addPop("+" + pts, e.x + e.w / 2, e.y - 8, "#ffe066");
+  Game.combo = n + 1;
+  if (Game.combo === 8) {
+    Game.lives += 1;
+    Game.toast("连踩 8 只！1UP");
+    addPop("1UP", e.x + e.w / 2, e.y - 28, "#7fe08a");
+    Sound.starPick();
+  }
+}
+
+function bumpBlock(tx, ty) {
+  const lv = Game.level;
+  const key = tx + "," + ty;
+  if (lv.past.has(key)) return;
+  const code = tileCode(tx, ty);
+
+  // 隐藏砖：顶到才现形，里面是金币或 1UP
+  if (code === T.HIDDEN) {
+    lv.grid[ty][tx] = T.BRICK;
+    Game.bumps.push({ tx, ty, t: 0.22 });
+    Game.shake = 2;
+    Sound.bump();
+    if (lv.hidden1up.has(key)) {
+      Game.lives += 1;
+      Game.toast("1UP！隐藏砖的礼物");
+      Sound.starPick();
+      spawnParticles(tx * TILE + TILE / 2, ty * TILE + 4, "#7fe08a", 16, 160);
+    } else {
+      Game.addCoin(1);
+      Game.score += 100;
+      Sound.coin();
+      spawnParticles(tx * TILE + TILE / 2, ty * TILE + 4, "#ffd54a", 8, 90);
+    }
+    return;
+  }
+
+  if (code === T.BRICK) {
+    // 多段金币砖：可以连顶多次，顶完才变成普通砖
+    const left = lv.multi.get(key);
+    if (left !== undefined) {
+      Game.bumps.push({ tx, ty, t: 0.22 });
+      Game.addCoin(1);
+      Game.score += 100;
+      Sound.coin();
+      spawnParticles(tx * TILE + TILE / 2, ty * TILE + 4, "#ffd54a", 8, 90);
+      if (left - 1 <= 0) lv.multi.delete(key);
+      else lv.multi.set(key, left - 1);
+      return;
+    }
+    const p = Game.player;
+    if (p && p.big) {
+      breakBrick(tx, ty);
+    } else {
+      Game.bumps.push({ tx, ty, t: 0.22 });
+      Sound.bump();
+      Game.shake = 3;
+    }
+    return;
+  }
+  if (code !== T.QUESTION) return;
+
+  lv.past.add(key);
+  lv.grid[ty][tx] = T.BRICK;
+  Game.bumps.push({ tx, ty, t: 0.22 });
+
+  const power = lv.powers.get(key);
+  if (power) {
+    spawnItem(power, tx, ty);
+    return;
+  }
+
+  Game.addCoin(1);
+  Game.score += 100;
+  Sound.coin();
+  spawnParticles(tx * TILE + TILE / 2, ty * TILE + 4, "#ffd54a", 8, 90);
+}
+
+/** 变大状态下顶砖块：整块撞碎成四块碎片 */
+function breakBrick(tx, ty) {
+  const lv = Game.level;
+  lv.grid[ty][tx] = T.EMPTY;
+  const cx = tx * TILE + TILE / 2;
+  const cy = ty * TILE + TILE / 2;
+
+  for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    Game.debris.push({
+      x: cx + sx * 8, y: cy + sy * 8,
+      vx: sx * rand(90, 170),
+      vy: sy < 0 ? rand(-430, -290) : rand(-210, -70),
+      size: rand(9, 13),
+      rot: rand(0, Math.PI),
+      vr: rand(-9, 9),
+      life: 1.8,
+    });
+  }
+
+  Game.score += 50;
+  Game.shake = 5;
+  Sound.crash();
+  spawnParticles(cx, cy + 4, "#d98d58", 10, 140);
+}
+
+/* ============================================================
+   道具：变大蘑菇 / 无敌星
+   ============================================================ */
+function spawnItem(type, tx, ty) {
+  const lv = Game.level;
+  lv.items.push({
+    type,
+    x: tx * TILE + 4, y: ty * TILE - 26,
+    w: 24, h: 26,
+    vx: type === "mushroom" ? 70 : (type === "star" ? 96 : 0),
+    vy: 0, onGround: false, phase: 0, alive: true,
+  });
+  Sound.powerup();
+}
+
+function collectItem(it) {
+  it.alive = false;
+  const p = Game.player;
+  Game.score += 1000;
+  const fxColor = it.type === "mushroom" ? "#ff5b4a" : (it.type === "flower" ? "#ff9838" : "#ffe066");
+  spawnParticles(it.x + it.w / 2, it.y + it.h / 2, fxColor, 16, 180);
+
+  if (it.type === "mushroom") {
+    if (!p.big) {
+      p.big = true;
+      p.h = 46;
+      p.y -= 16;
+      p.invuln = Math.max(p.invuln, 0.6);
+    }
+    Game.toast("变大！被撞一下只会变小");
+    Sound.powerup();
+  } else if (it.type === "flower") {
+    if (!p.big) {
+      p.big = true;
+      p.h = 46;
+      p.y -= 16;
+    }
+    p.fire = true;
+    p.invuln = Math.max(p.invuln, 0.6);
+    Game.toast("火焰花！按 K / X 吐火球");
+    Sound.powerup();
+  } else {
+    p.star = 9;
+    Game.toast("无敌星 9 秒：撞到小怪直接清掉");
+    Sound.starPick();
+  }
+}
+
+function shrinkPlayer() {
+  const p = Game.player;
+  p.big = false;
+  p.fire = false;
+  p.h = 30;
+  p.y += 16;
+  p.invuln = 1.5;
+  Game.shake = 4;
+  Game.toast("变小了，小心！");
+  Sound.hurt();
+}
+
+/** 火球形态被撞：只掉火力，仍保持大个头 */
+function loseFire() {
+  const p = Game.player;
+  p.fire = false;
+  p.invuln = 1.5;
+  Game.shake = 4;
+  spawnParticles(p.x + p.w / 2, p.y + p.h / 2, "#ff9838", 10, 150);
+  Game.toast("火灭了，还是大个子");
+  Sound.hurt();
+}
+
+/* ============================================================
+   火球（火焰花）
+   ============================================================ */
+const FIRE_SPEED = 430;
+const FIRE_LIFE = 2.4;
+const FIRE_MAX = 2;          // 同屏最多同时存在的火球数
+const FIRE_COOLDOWN = 0.2;
+
+function shootFireball(p) {
+  Game.fireballs.push({
+    x: p.dir > 0 ? p.x + p.w - 6 : p.x + 2,
+    y: p.y + p.h * 0.42,
+    w: 12, h: 12,
+    vx: p.dir * FIRE_SPEED, vy: 130,
+    life: FIRE_LIFE, spin: 0, alive: true,
+  });
+  p.shootCd = FIRE_COOLDOWN;
+  Game.fx.push({
+    x: p.x + p.w / 2 + p.dir * 14, y: p.y + p.h * 0.42 + 6,
+    vx: p.dir * 90, vy: -60, life: 0.3, max: 0.3, color: "#ffd166", size: 5,
+  });
+  Sound.fire();
+}
+
+function updateFireballs(dt) {
+  const lv = Game.level;
+
+  for (const f of Game.fireballs) {
+    if (!f.alive) continue;
+    f.life -= dt;
+    if (f.life <= 0 || f.y > FALL_LIMIT) { f.alive = false; continue; }
+
+    f.vy = Math.min(f.vy + 1300 * dt, 640);
+    if (moveX(f, f.vx * dt) !== 0) f.vx = -f.vx;   // 撞墙反弹
+    const hit = moveY(f, f.vy * dt);
+    if (hit === 1) f.vy = -320;                    // 落地弹跳
+    else if (hit === -1) f.vy = 90;
+
+    f.spin += dt * 16;
+
+    // 火球命中关底 Boss
+    const boss = lv.boss;
+    if (boss && boss.alive && boss.invuln <= 0 && overlap(f, boss)) {
+      hurtBoss(1, Math.sign(f.vx) || 1);
+      f.alive = false;
+      continue;
+    }
+
+    if (Math.random() < 0.45) {
+      Game.fx.push({
+        x: f.x + 6, y: f.y + 6,
+        vx: rand(-30, 30), vy: rand(-70, 10),
+        life: 0.26, max: 0.26, color: "#ffb03a", size: rand(2, 4),
+      });
+    }
+
+    // 火球命中炮台：直接炸毁
+    if (lv.cannons) {
+      for (const c of lv.cannons) {
+        if (!c.alive || !overlap(f, c)) continue;
+        c.alive = false;
+        f.alive = false;
+        Game.score += 400;
+        addPop("+400", c.x + c.w / 2, c.y - 6, "#ffe066");
+        Game.shake = 3;
+        Sound.stomp();
+        spawnParticles(c.x + c.w / 2, c.y + c.h / 2, "#ff8a80", 14, 180);
+        break;
+      }
+      if (!f.alive) continue;
+    }
+
+    for (const e of lv.enemies) {
+      if (!e.alive || e.dead > 0) continue;
+      if (overlap(f, e)) {
+        e.dead = 0.4;
+        f.alive = false;
+        Game.score += 200;
+        Game.shake = 3;
+        Sound.stomp();
+        spawnParticles(e.x + e.w / 2, e.y + e.h / 2, "#ff9838", 12, 170);
+        break;
+      }
+    }
+  }
+
+  for (let i = Game.fireballs.length - 1; i >= 0; i--) {
+    if (!Game.fireballs[i].alive) Game.fireballs.splice(i, 1);
+  }
+}
+
+function updateItems(dt) {
+  const lv = Game.level;
+  const p = Game.player;
+
+  for (const it of lv.items) {
+    if (!it.alive) continue;
+    it.phase += dt;
+    it.vy = Math.min(it.vy + GRAVITY * dt, MAX_FALL);
+
+    if (moveX(it, it.vx * dt) !== 0) it.vx = -it.vx;
+    const landed = moveY(it, it.vy * dt);
+    if (landed === 1) {
+      it.vy = it.type === "star" ? -330 : 0;   // 星星持续弹跳
+    }
+    if (it.y > FALL_LIMIT) it.alive = false;
+
+    if (Game.phase === "playing" && !p.dead && overlap(p, it)) collectItem(it);
+  }
+
+  for (let i = lv.items.length - 1; i >= 0; i--) {
+    if (!lv.items[i].alive) lv.items.splice(i, 1);
+  }
+}
+
+/* ============================================================
+   玩家更新
+   ============================================================ */
+const MAX_SPEED = 250;
+const ACCEL = 1900;
+const FRICTION = 2200;
+const GRAVITY = 1900;
+const JUMP_VEL = -760;
+const MAX_FALL = 820;
+
+function updatePlayer(dt) {
+  const p = Game.player;
+  const lv = Game.level;
+
+  if (p.dead) {
+    p.deadTimer -= dt;
+    p.vy = Math.min(p.vy + GRAVITY * dt, MAX_FALL);
+    p.y += p.vy * dt;
+    if (p.deadTimer <= 0) Game.loseLife();
+    return;
+  }
+
+  // 水平输入
+  const dirInput = (Input.right ? 1 : 0) - (Input.left ? 1 : 0);
+  if (dirInput !== 0) {
+    p.vx += dirInput * ACCEL * dt;
+    p.vx = clamp(p.vx, -MAX_SPEED, MAX_SPEED);
+    p.dir = dirInput;
+    p.animTime += dt * Math.abs(p.vx) / 100;
+  } else {
+    const f = FRICTION * dt;
+    if (Math.abs(p.vx) <= f) p.vx = 0;
+    else p.vx -= Math.sign(p.vx) * f;
+  }
+
+  // 火球：火球形态下按 K / X 发射（同屏上限 2 颗）
+  p.shootCd = Math.max(0, (p.shootCd || 0) - dt);
+  if (p.fire && Input.shootPressed && p.shootCd <= 0 && Game.fireballs.length < FIRE_MAX) {
+    shootFireball(p);
+  }
+
+  // 跳跃（含缓冲与土狼时间）
+  if (p.onGround) p.coyote = 0.1;
+  else p.coyote = Math.max(0, p.coyote - dt);
+
+  if (Input.jumpPressed) {
+    p.jumpBuffer = 0.12;
+    Input.jumpPressed = false;
+  }
+  p.jumpBuffer = Math.max(0, p.jumpBuffer - dt);
+  if (p.jumpBuffer > 0 && p.coyote > 0) {
+    p.vy = JUMP_VEL;
+    p.onGround = false;
+    p.coyote = 0;
+    p.jumpBuffer = 0;
+    Sound.jump();
+  }
+  // 松手减速（长按跳更高）：保留约 1.8 格的小跳余量，否则轻点几乎原地不动
+  if (!Input.jump && p.vy < -400) p.vy = -400;
+
+  p.vy = Math.min(p.vy + GRAVITY * dt, MAX_FALL);
+
+  // 位移与碰撞
+  if (moveX(p, p.vx * dt) !== 0) p.vx = 0;
+  const landed = moveY(p, p.vy * dt);
+  if (landed === 1) {
+    p.onGround = true;
+    p.vy = 0;
+    Game.combo = 0;              // 落地即中断连踩
+  } else {
+    p.onGround = false;
+    if (landed === -1) {
+      if (p.headHit) bumpBlock(p.headHit.tx, p.headHit.ty);
+      p.vy = 60;
+    }
+  }
+  p.headHit = null;
+
+  // 站上升降平台：跟着平台一起走
+  p.onLift = null;
+  for (const l of lv.lifts) {
+    const feet = p.y + p.h;
+    if (p.x + p.w > l.x + 4 && p.x < l.x + l.w - 4 && p.vy >= 0 &&
+        feet >= l.y - 2 && feet <= l.y + 18) {
+      p.y = l.y - p.h;
+      p.vy = 0;
+      p.onGround = true;
+      p.onLift = l;
+      break;
+    }
+  }
+
+  // 弹簧：踩上去高高弹起
+  for (const s of lv.springs) {
+    const feet = p.y + p.h;
+    if (p.vy >= 0 && p.x + p.w > s.x + 2 && p.x < s.x + s.w - 2 &&
+        feet >= s.y - 4 && feet <= s.y + 18) {
+      p.y = s.y - p.h;
+      p.vy = -980;                     // 约 8 格，足够上平台又不至于飞出画面
+      p.onGround = false;
+      s.squash = 0.6;
+      Sound.jump();
+      Game.shake = 3;
+      break;
+    }
+  }
+
+  if (p.invuln > 0) p.invuln -= dt;
+  if (p.star > 0) {
+    p.star = Math.max(0, p.star - dt);
+    // 无敌星残影：记录最近几帧的位置
+    Game.starTrail.unshift({ x: p.x, y: p.y, w: p.w, h: p.h, life: 0.28 });
+    while (Game.starTrail.length > 7) Game.starTrail.pop();
+  }
+  p.x = clamp(p.x, 0, lv.width * TILE - p.w);
+
+  if (p.y > FALL_LIMIT) {
+    p.dead = true; p.deadTimer = 0.7; p.vy = -420;
+    Sound.hurt();
+  }
+
+  // 存档点：走到小旗处激活，死亡后从这里复活
+  if (lv.checkpointX && !Game.checkpointActive && p.x + p.w > lv.checkpointX) {
+    Game.checkpointX = lv.checkpointX;
+    Game.checkpointActive = true;
+    Game.toast("存档点已激活");
+    Sound.powerup();
+    spawnParticles(lv.checkpointX + 10, 13 * TILE - 60, "#7fe08a", 16, 150);
+  }
+
+  // 水管入口：站在带 ↓ 标记的水管顶部按 ↓ 钻进金币房
+  if (Game.pipeCooldown > 0) Game.pipeCooldown -= dt;
+  if (!lv.isBonus && Input.down && p.onGround && Game.pipeCooldown <= 0) {
+    for (const pd of lv.pipeDowns) {
+      if (p.x + p.w > pd.x + 8 && p.x < pd.x + pd.w - 8 &&
+          Math.abs((p.y + p.h) - pd.topY) < 4) {
+        Game.startPipeIn();
+        return;
+      }
+    }
+  }
+
+  // 终点：地下房走右侧出口返回地面，普通关则是旗杆下滑
+  if (lv.isBonus) {
+    if (p.x + p.w > lv.flagX) { Game.exitBonus(); return; }
+  } else if (p.x + p.w > lv.flagX && Game.phase === "playing") {
+    Game.startFlagDown();
+  }
+}
+
+/* ============================================================
+   敌人更新
+   ============================================================ */
+/** 玩家受伤：火焰 → 掉火力，大个 → 变小，小个 → 死亡 */
+function damagePlayer() {
+  const p = Game.player;
+  if (!p || p.dead || p.invuln > 0) return;
+  Game.combo = 0;                // 受伤打断连踩
+  if (p.fire) loseFire();
+  else if (p.big) shrinkPlayer();
+  else {
+    p.dead = true;
+    p.deadTimer = 0.7;
+    p.vy = -430;
+    Sound.hurt();
+  }
+}
+
+function updateEnemies(dt) {
+  const lv = Game.level;
+  const p = Game.player;
+
+  for (const e of lv.enemies) {
+    if (!e.alive) continue;
+
+    if (e.dead > 0) {
+      e.dead -= dt;
+      e.y += 240 * dt;             // 被踩后下沉
+      if (e.dead <= 0) e.alive = false;
+      continue;
+    }
+
+    e.anim += dt;
+    e.shellCd = Math.max(0, (e.shellCd || 0) - dt);
+    e.hitCd = Math.max(0, (e.hitCd || 0) - dt);
+    if (e.type === "flyer") {
+      // 飞行龟：无视重力，正弦上下浮动 + 限定范围横向巡逻
+      e.flyT += dt;
+      e.x += e.vx * dt;
+      if (e.x < e.minX) { e.x = e.minX; e.vx = Math.abs(e.vx); }
+      if (e.x > e.maxX) { e.x = e.maxX; e.vx = -Math.abs(e.vx); }
+      e.y = e.y0 + Math.sin(e.flyT * 2.2) * e.flyAmp;
+    } else {
+      if (e.vx !== 0 && moveX(e, e.vx * dt) !== 0) {
+        e.vx = -e.vx;                // 撞墙掉头（滑行龟壳也会反弹）
+        if (e.type === "koopa" && e.state === "slide") Sound.bump();
+      }
+      const landed = moveY(e, e.vy * dt);
+      if (landed === 1) e.vy = 0;
+
+      // 走路的小怪遇到平台边缘掉头；滑行龟壳会直接滑下去
+      if (landed === 1 && !(e.type === "koopa" && e.state === "slide")) {
+        const frontX = e.vx > 0 ? e.x + e.w + 2 : e.x - 2;
+        const tx = Math.floor(frontX / TILE);
+        const ty = Math.floor((e.y + e.h + 2) / TILE);
+        if (!isSolid(tx, ty)) e.vx = -e.vx;
+      }
+      if (e.y > FALL_LIMIT) e.alive = false;
+
+      // 滑行的龟壳会撞飞路上的其他小怪
+      if (e.type === "koopa" && e.state === "slide") {
+        for (const o of lv.enemies) {
+          if (o === e || !o.alive || o.dead > 0) continue;
+          if (overlap(e, o)) {
+            o.dead = 0.4;
+            Game.score += 200;
+            addPop("+200", o.x + o.w / 2, o.y - 6, "#ffe066");
+            Game.shake = 3;
+            Sound.stomp();
+            spawnParticles(o.x + o.w / 2, o.y + o.h / 2, "#ffe066", 10, 150);
+          }
+        }
+      }
+    }
+
+    if (Game.phase !== "playing" || p.dead || !overlap(p, e)) continue;
+
+    if (p.star > 0) {
+      // 无敌星：直接撞飞
+      e.dead = 0.4;
+      Game.score += 200;
+      addPop("+200", e.x + e.w / 2, e.y - 6, "#ffe066");
+      Game.shake = 4;
+      Sound.stomp();
+      spawnParticles(e.x + e.w / 2, e.y + e.h / 2, "#ffe066", 12, 170);
+      continue;
+    }
+
+    const falling = p.vy > 80;
+    const fromAbove = p.y + p.h - e.y < 20;
+
+    if (e.type === "koopa") {
+      if (e.state === "walk") {
+        if (falling && fromAbove) {
+          // 踩一下：缩进壳里
+          e.state = "shell";
+          e.y += 8;
+          e.h = 20;
+          e.vx = 0;
+          e.shellCd = 0.22;
+          p.vy = -420;
+          p.onGround = false;
+          stompScore(e);
+          Game.shake = 4;
+          Sound.stomp();
+          spawnParticles(e.x + e.w / 2, e.y + e.h / 2, "#8be06a", 10, 140);
+        } else {
+          damagePlayer();
+        }
+      } else if (e.state === "shell") {
+        if (falling && fromAbove) {
+          p.vy = -420;
+          p.onGround = false;
+          Sound.stomp();
+        } else if (e.shellCd <= 0) {
+          // 踢壳：朝远离玩家的方向滑出去
+          e.state = "slide";
+          e.vx = (p.x + p.w / 2 < e.x + e.w / 2 ? 1 : -1) * 380;
+          e.shellCd = 0.16;
+          e.hitCd = 0.3;          // 刚被踢出去时不会立刻撞到踢壳的人
+          Game.score += 100;
+          Sound.stomp();
+        }
+      } else {
+        // 滑行中的壳：踩住能停下，侧面碰到就受伤
+        if (falling && fromAbove) {
+          e.state = "shell";
+          e.vx = 0;
+          e.shellCd = 0.22;
+          p.vy = -420;
+          p.onGround = false;
+          stompScore(e);
+          Sound.stomp();
+        } else if (e.hitCd <= 0) {
+          damagePlayer();
+        }
+      }
+      continue;
+    }
+
+    // 栗子怪
+    if (falling && fromAbove) {
+      e.dead = 0.4;
+      p.vy = -420;
+      p.onGround = false;
+      stompScore(e);
+      Game.shake = 4;
+      Sound.stomp();
+      spawnParticles(e.x + e.w / 2, e.y + e.h / 2, "#c96a2b", 10, 130);
+    } else {
+      damagePlayer();
+    }
+  }
+}
+
+/* ============================================================
+   炮台与炮弹
+   ============================================================ */
+function updateCannons(dt) {
+  const lv = Game.level;
+  const p = Game.player;
+
+  for (const c of lv.cannons) {
+    c.anim += dt;
+    if (c.fireT > 0) c.fireT = Math.max(0, c.fireT - dt);
+    if (!c.alive) continue;
+
+    // 定时开火：只在对玩家可见的范围内发射
+    c.cd -= dt;
+    if (c.cd <= 0) {
+      if (Game.phase === "playing" && !p.dead &&
+          Math.abs(p.x + p.w / 2 - (c.x + c.w / 2)) < 700) {
+        const dir = p.x + p.w / 2 < c.x + c.w / 2 ? -1 : 1;
+        c.dir = dir;
+        c.cd = c.interval;
+        c.fireT = 0.18;
+        lv.bullets.push({
+          x: dir > 0 ? c.x + c.w - 4 : c.x - 20,
+          y: c.y + 8, w: 22, h: 15,
+          vx: dir * 185, life: 6, alive: true, anim: 0,
+        });
+        Sound.blip(150, 0.09, "sawtooth", 0.05, 90);
+      } else {
+        c.cd = 0.4;
+      }
+    }
+
+    // 碰到炮台本体：无敌星能撞掉，否则受伤
+    if (Game.phase === "playing" && !p.dead && overlap(p, c)) {
+      if (p.star > 0) {
+        c.alive = false;
+        Game.score += 500;
+        addPop("+500", c.x + c.w / 2, c.y - 6, "#ffe066");
+        Game.shake = 4;
+        Sound.stomp();
+        spawnParticles(c.x + c.w / 2, c.y + c.h / 2, "#ff8a80", 16, 200);
+      } else {
+        damagePlayer();
+      }
+    }
+  }
+
+  // 炮弹：直线飞行，踩得到、也躲得开
+  for (let i = lv.bullets.length - 1; i >= 0; i--) {
+    const b = lv.bullets[i];
+    b.anim += dt;
+    b.life -= dt;
+    b.x += b.vx * dt;
+    if (!b.alive || b.life <= 0 || b.x < -60 || b.x > lv.width * TILE + 60) {
+      lv.bullets.splice(i, 1);
+      continue;
+    }
+    // 撞到砖块 / 水管 / 地面就炸掉：不能隔墙打人，砖块可以作为掩体
+    const btx = Math.floor((b.vx > 0 ? b.x + b.w - 2 : b.x + 2) / TILE);
+    const bty = Math.floor((b.y + b.h / 2) / TILE);
+    if (isSolid(btx, bty)) {
+      spawnParticles(b.x + b.w / 2, b.y + b.h / 2, "#c9c9c9", 7, 130);
+      lv.bullets.splice(i, 1);
+      continue;
+    }
+    if (Game.phase !== "playing" || p.dead || !overlap(p, b)) continue;
+
+    if (p.star > 0) {
+      Game.score += 100;
+      spawnParticles(b.x + b.w / 2, b.y + b.h / 2, "#ffe066", 8, 140);
+      lv.bullets.splice(i, 1);
+      continue;
+    }
+    const stomp = p.vy > 80 && p.y + p.h - b.y < 22;
+    if (stomp) {
+      p.vy = -420;
+      p.onGround = false;
+      Game.score += 100;
+      addPop("+100", b.x + b.w / 2, b.y - 6);
+      Sound.stomp();
+    } else {
+      damagePlayer();
+    }
+    lv.bullets.splice(i, 1);
+  }
+}
+
+/* ============================================================
+   关底 Boss
+   ============================================================ */
+/** Boss 受伤：踩一下或火球命中各扣 1 点，短暂无敌防止连击 */
+function hurtBoss(amount, dir = 1) {
+  const b = Game.level.boss;
+  if (!b || !b.alive || b.invuln > 0) return false;
+  b.hp -= amount;
+  b.invuln = 0.85;
+  b.vx = (dir || 1) * 90;
+  Game.shake = 6;
+  Sound.stomp();
+  addPop("-" + amount, b.x + b.w / 2, b.y + 8, "#ff8a80");
+  spawnParticles(b.x + b.w / 2, b.y + b.h / 2, "#2fa84f", 14, 190);
+  if (b.hp <= 0) defeatBoss();
+  return true;
+}
+
+/** Boss 倒下：加分、炸开城门 */
+function defeatBoss() {
+  const lv = Game.level;
+  const b = lv.boss;
+  b.alive = false;
+  b.deadT = 0.9;
+  Game.score += 3000;
+  addPop("+3000", b.x + b.w / 2, b.y + 12, "#ffe066");
+  Game.shake = 10;
+  Game.combo = 0;
+  Sound.clear();
+  spawnParticles(b.x + b.w / 2, b.y + b.h / 2, "#ffd447", 34, 280);
+
+  // 城门炸开
+  for (const [x, y] of lv.gateCells) {
+    lv.grid[y][x] = T.EMPTY;
+    for (let i = 0; i < 2; i++) {
+      Game.debris.push({
+        x: x * TILE + rand(4, 28), y: y * TILE + rand(4, 28),
+        vx: rand(-110, 110), vy: rand(-240, -60),
+        size: rand(6, 12), life: 1.8, rot: rand(0, 6.28), vr: rand(-8, 8),
+      });
+    }
+  }
+  Game.toast(lv.gateCells.length ? "Boss 倒下，城门炸开！" : "Boss 被击败！");
+  Game.saveBest();
+}
+
+function updateBoss(dt) {
+  const lv = Game.level;
+  const b = lv.boss;
+  if (!b) return;
+  const p = Game.player;
+
+  if (!b.alive) {
+    if (b.deadT > 0) b.deadT = Math.max(0, b.deadT - dt);
+    return;
+  }
+
+  b.anim += dt;
+  b.invuln = Math.max(0, b.invuln - dt);
+  b.vy = Math.min(b.vy + GRAVITY * dt, MAX_FALL);
+
+  if (moveX(b, b.vx * dt) !== 0) b.vx = -b.vx;
+  if (moveY(b, b.vy * dt) === 1) b.vy = 0;
+
+  // 巡逻范围限制在城门前的竞技场
+  if (b.x < b.minX) { b.x = b.minX; b.vx = Math.abs(b.vx); }
+  if (b.x > b.maxX) { b.x = b.maxX; b.vx = -Math.abs(b.vx); }
+
+  if (Game.phase !== "playing" || !p || p.dead || !overlap(p, b)) return;
+
+  if (p.star > 0) {
+    hurtBoss(1, p.x + p.w / 2 < b.x + b.w / 2 ? 1 : -1);
+    p.vy = -420;
+    p.onGround = false;
+    return;
+  }
+
+  const stomp = p.vy > 80 && p.y + p.h - b.y < 30;
+  if (stomp) {
+    p.vy = -520;
+    p.onGround = false;
+    if (!hurtBoss(1, p.x + p.w / 2 < b.x + b.w / 2 ? 1 : -1)) {
+      // 无敌帧内再踩：只弹起，不重复扣血
+      Sound.stomp();
+    }
+  } else {
+    damagePlayer();
+  }
+}
+
+/* ============================================================
+   金币 / 特效 / 镜头
+   ============================================================ */
+function updateCollectibles(dt) {
+  const lv = Game.level;
+  const p = Game.player;
+  const cx = p.x + p.w / 2;
+  const cy = p.y + p.h / 2;
+
+  for (const c of lv.coins) {
+    if (c.taken) continue;
+    c.phase += dt * 4;
+    const dx = cx - c.x;
+    const dy = cy - c.y;
+    if (dx * dx + dy * dy < 26 * 26) {
+      c.taken = true;
+      Game.addCoin(1);
+      Game.score += 100;
+      Sound.coin();
+      spawnParticles(c.x, c.y, "#ffe066", 6, 110);
+    }
+  }
+
+  for (let i = Game.fx.length - 1; i >= 0; i--) {
+    const f = Game.fx[i];
+    f.life -= dt;
+    if (f.life <= 0) { Game.fx.splice(i, 1); continue; }
+    f.x += f.vx * dt;
+    f.y += f.vy * dt;
+    f.vy += 900 * dt;
+  }
+
+  for (let i = Game.pops.length - 1; i >= 0; i--) {
+    const q = Game.pops[i];
+    q.life -= dt;
+    if (q.life <= 0) { Game.pops.splice(i, 1); continue; }
+    q.y += q.vy * dt;
+    q.vy *= 0.94;
+  }
+
+  for (let i = Game.bumps.length - 1; i >= 0; i--) {
+    Game.bumps[i].t -= dt;
+    if (Game.bumps[i].t <= 0) Game.bumps.splice(i, 1);
+  }
+
+  for (let i = Game.debris.length - 1; i >= 0; i--) {
+    const d = Game.debris[i];
+    d.life -= dt;
+    if (d.life <= 0) { Game.debris.splice(i, 1); continue; }
+    d.x += d.vx * dt;
+    d.y += d.vy * dt;
+    d.vy += 1250 * dt;
+    d.rot += d.vr * dt;
+  }
+
+  // 无敌星残影淡出
+  for (let i = Game.starTrail.length - 1; i >= 0; i--) {
+    const t = Game.starTrail[i];
+    t.life -= dt;
+    if (t.life <= 0) Game.starTrail.splice(i, 1);
+  }
+}
+
+/** 移动平台与弹簧的持续动画（在玩家物理之前调用，先带着玩家一起走） */
+function updateLifts(dt) {
+  const lv = Game.level;
+  for (const l of lv.lifts) {
+    l.t += dt * l.speed;
+    // 余弦缓动：t=0 时正好在起始位置，避免平台“瞬移”导致人踩空
+    const k = (1 - Math.cos(l.t)) / 2;
+    if (l.axis === "x") {
+      const nx = l.x0 + k * l.range;
+      l.dx = nx - l.x;
+      l.x = nx;
+      l.dy = 0;
+    } else {
+      const ny = l.y0 - k * l.range;
+      l.dy = ny - l.y;
+      l.y = ny;
+      l.dx = 0;
+    }
+  }
+  const p = Game.player;
+  if (p && p.onLift) {
+    if (p.onLift.axis === "x") p.x += p.onLift.dx;   // 横向平台把玩家一起带走
+    else p.y += p.onLift.dy;
+  }
+  for (const s of lv.springs) {
+    if (s.squash > 0) s.squash = Math.max(0, s.squash - dt * 2.6);
+  }
+}
+
+function updateCamera(dt) {
+  const lv = Game.level;
+  const p = Game.player;
+  // 镜头死区：角色在 35%~55% 视口之间移动时不推镜头
+  const screenX = p.x + p.w / 2 - Game.camX;
+  const lo = VIEW_W * 0.35;
+  const hi = VIEW_W * 0.55;
+  let target = Game.camX;
+  if (screenX < lo) target = Game.camX - (lo - screenX);
+  else if (screenX > hi) target = Game.camX + (screenX - hi);
+  target = clamp(target, 0, lv.width * TILE - VIEW_W);
+  Game.camX = lerp(Game.camX, target, clamp(dt * 12, 0, 1));
+  if (Game.shake > 0) Game.shake = Math.max(0, Game.shake - dt * 22);
+}
+
+/* ============================================================
+   主更新
+   ============================================================ */
+function update(dt) {
+  Game.tick += dt;
+  if (Game.toastTimer > 0) Game.toastTimer -= dt;
+  if (Game.score > Game.best) Game.best = Game.score;
+
+  // 进 / 出水管的 0.4s 动画：期间冻结玩家物理
+  if (Game.pipeAnim) {
+    const pa = Game.pipeAnim;
+    pa.t += dt;
+    const p = Game.player;
+    if (pa.mode === "in") p.y += 100 * dt;
+    else p.y = lerp(pa.startY, pa.targetY, Math.min(1, pa.t / pa.dur));
+    updateCollectibles(dt);
+    updateCamera(dt);
+    if (pa.t >= pa.dur) {
+      Game.pipeAnim = null;
+      if (pa.mode === "in") Game.loadBonus();
+      else Game.pipeCooldown = 0.5;
+    }
+    return;
+  }
+
+  // 旗杆下滑
+  if (Game.phase === "flagdown") {
+    Game.updateFlagDown(dt);
+    updateItems(dt);
+    updateCollectibles(dt);
+    updateCamera(dt);
+    return;
+  }
+
+  // 结算：剩余时间逐秒换算成分数
+  if (Game.phase === "levelclear") {
+    const cd = Game.clearData;
+    if (cd) {
+      cd.t += dt;
+      if (cd.bonus > 0) {
+        cd.step += dt * 60;
+        while (cd.step >= 1 && cd.bonus > 0) {
+          cd.step -= 1;
+          cd.bonus -= 1;
+          cd.gained += 5;
+          Game.timeLeft = Math.max(0, Game.timeLeft - 1);
+          Game.score += 5;
+          if (cd.bonus % 5 === 0) Sound.coin();
+        }
+      }
+      if (cd.t >= cd.total && cd.bonus <= 0) Game.nextLevel();
+    } else {
+      Game.clearTimer -= dt;
+      if (Game.clearTimer <= 0) Game.nextLevel();
+    }
+    updateCollectibles(dt);
+    updateCamera(dt);
+    return;
+  }
+  if (Game.phase !== "playing") return;
+
+  // 时间耗尽：只触发一次死亡，否则每帧重置 deadTimer 会导致永远死不掉
+  Game.timeLeft -= dt;
+  if (Game.timeLeft <= 0) {
+    Game.timeLeft = 0;
+    if (!Game.player.dead) {
+      Game.player.dead = true;
+      Game.player.deadTimer = 0.7;
+      Game.player.vy = -420;
+      Game.toast("时间到！");
+      Game.combo = 0;
+      Sound.hurt();
+    }
+  }
+
+  updateLifts(dt);
+  updatePlayer(dt);
+  Input.shootPressed = false;
+  Input.downPressed = false;
+  updateFireballs(dt);
+  updateCannons(dt);
+  updateEnemies(dt);
+  updateBoss(dt);
+  updateItems(dt);
+  updateCollectibles(dt);
+  updateCamera(dt);
+
+  if (Game.player.dead && Game.player.deadTimer > 0 && Game.player.y > FALL_LIMIT) {
+    // 掉坑后提前结算
+    Game.player.deadTimer = 0;
+  }
+}
+
+/* ============================================================
+   渲染 · 背景
+   ============================================================ */
+function drawCloud(x, y, s) {
+  ctx.save();
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(x, y, 22 * s, 0, Math.PI * 2);
+  ctx.arc(x + 26 * s, y - 10 * s, 26 * s, 0, Math.PI * 2);
+  ctx.arc(x + 56 * s, y, 20 * s, 0, Math.PI * 2);
+  ctx.rect(x, y, 56 * s, 24 * s);
+  ctx.fill();
+  ctx.restore();
+}
+
+/* 天空与草毯是静态的：离屏缓存一次，之后每帧直接贴图 */
+let skyCache = null;
+function getSkyCache() {
+  if (skyCache) return skyCache;
+  skyCache = document.createElement("canvas");
+  skyCache.width = VIEW_W;
+  skyCache.height = VIEW_H;
+  const c = skyCache.getContext("2d");
+  const g = c.createLinearGradient(0, 0, 0, VIEW_H);
+  g.addColorStop(0, "#4f93e0");
+  g.addColorStop(0.5, "#8ec6f2");
+  g.addColorStop(1, "#cfe9fb");
+  c.fillStyle = g;
+  c.fillRect(0, 0, VIEW_W, VIEW_H);
+  c.fillStyle = "#6fbf6a";
+  c.fillRect(0, VIEW_H - 40, VIEW_W, 40);
+  return skyCache;
+}
+
+function drawBackground() {
+  const lv = Game.level;
+  if (lv && lv.isBonus) {
+    // 地下金币房：砖墙背景
+    ctx.fillStyle = "#171220";
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    const cam = Game.camX;
+    const startCol = Math.floor(cam / 64) - 1;
+    for (let i = 0; i < 20; i++) {
+      const bx = (startCol + i) * 64 - cam;
+      for (let row = 0; row < 9; row++) {
+        const by = row * 64;
+        ctx.fillStyle = row % 2 === 0 ? "#241b2e" : "#1e1727";
+        ctx.fillRect(bx, by, 62, 62);
+        ctx.fillStyle = "rgba(255,255,255,.035)";
+        ctx.fillRect(bx, by, 62, 3);
+      }
+    }
+    return;
+  }
+
+  ctx.drawImage(getSkyCache(), 0, 0, VIEW_W, VIEW_H);
+
+  const cam = Game.camX;
+
+  // 太阳
+  ctx.save();
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = "#fff3b0";
+  ctx.beginPath();
+  ctx.arc(VIEW_W - 140 - cam * 0.04, 100, 52, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // 云（视差 0.25）
+  const span = VIEW_W + 460;
+  for (let i = 0; i < 7; i++) {
+    let cx = (i * 300 - cam * 0.25) % span;
+    if (cx < -220) cx += span;
+    drawCloud(cx, 60 + (i % 3) * 52, 0.75 + (i % 2) * 0.35);
+  }
+
+  // 远山（两层视差）
+  const drawHills = (offset, scale, color) => {
+    ctx.fillStyle = color;
+    for (let i = 0; i < 9; i++) {
+      let hx = (i * 260 - cam * offset) % (VIEW_W + 360);
+      if (hx < -300) hx += VIEW_W + 360;
+      ctx.beginPath();
+      ctx.moveTo(hx - 160 * scale, VIEW_H);
+      ctx.quadraticCurveTo(hx, VIEW_H - 150 * scale, hx + 160 * scale, VIEW_H);
+      ctx.closePath();
+      ctx.fill();
+    }
+  };
+  drawHills(0.12, 1.5, "#9fd3a8");
+  drawHills(0.28, 1.0, "#7cc189");
+}
+
+/* ============================================================
+   渲染 · 瓦片
+   ============================================================ */
+function drawTile(code, tx, ty) {
+  const x = tx * TILE;
+  const y = ty * TILE;
+
+  if (code === T.GROUND) {
+    const above = tileCode(tx, ty - 1);
+    ctx.fillStyle = "#a5653a";
+    ctx.fillRect(x, y, TILE, TILE);
+    ctx.fillStyle = "#8d5229";
+    ctx.fillRect(x, y + TILE - 4, TILE, 4);
+    ctx.fillStyle = "#b07446";
+    ctx.fillRect(x + 4, y + 6, 9, 7);
+    ctx.fillRect(x + 19, y + 16, 8, 6);
+    if (!SOLID.has(above)) {
+      ctx.fillStyle = "#63b657";
+      ctx.fillRect(x, y, TILE, 9);
+      ctx.fillStyle = "#7ed36d";
+      ctx.fillRect(x, y, TILE, 4);
+      ctx.fillStyle = "#4f9c46";
+      ctx.fillRect(x, y + 9, TILE, 2);
+    }
+    return;
+  }
+
+  if (code === T.BRICK) {
+    ctx.fillStyle = "#c1703f";
+    ctx.fillRect(x, y, TILE, TILE);
+    ctx.fillStyle = "#8d4d26";
+    ctx.fillRect(x, y + 14, TILE, 3);
+    ctx.fillRect(x, y + 29, TILE, 3);
+    ctx.fillRect(x + 15, y, 3, 14);
+    ctx.fillRect(x + 7, y + 17, 3, 12);
+    ctx.fillRect(x + 23, y + 17, 3, 12);
+    ctx.fillStyle = "#d98d58";
+    ctx.fillRect(x + 2, y + 2, 12, 3);
+    // 多段金币砖：中间闪一枚金币提示还能顶
+    const left = Game.level && Game.level.multi ? Game.level.multi.get(tx + "," + ty) : undefined;
+    if (left !== undefined) {
+      const pulse = 0.5 + 0.5 * Math.sin(Game.tick * 6 + tx);
+      ctx.fillStyle = `rgba(255,224,102,${0.5 + pulse * 0.45})`;
+      ctx.beginPath();
+      ctx.ellipse(x + TILE / 2, y + TILE / 2, 6, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    return;
+  }
+
+  if (code === T.QUESTION) {
+    const pulse = 0.5 + 0.5 * Math.sin(Game.tick * 5 + tx);
+    ctx.fillStyle = "#f0b83c";
+    ctx.fillRect(x, y, TILE, TILE);
+    ctx.fillStyle = "#c88b1b";
+    ctx.fillRect(x, y + TILE - 4, TILE, 4);
+    ctx.fillRect(x + TILE - 4, y, 4, TILE);
+    ctx.fillStyle = `rgba(255,243,180,${0.35 + pulse * 0.4})`;
+    ctx.fillRect(x + 3, y + 3, TILE - 6, TILE - 8);
+    ctx.fillStyle = "#6b4207";
+    ctx.font = "bold 18px Verdana, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("?", x + TILE / 2, y + TILE / 2 + 1);
+    ctx.fillStyle = "#8a5a10";
+    [[5, 5], [TILE - 9, 5], [5, TILE - 9], [TILE - 9, TILE - 9]].forEach(([dx, dy]) =>
+      ctx.fillRect(x + dx, y + dy, 4, 4));
+    return;
+  }
+
+  if (code === T.STONE) {
+    ctx.fillStyle = "#93a4b8";
+    ctx.fillRect(x, y, TILE, TILE);
+    ctx.fillStyle = "#c3d1e2";
+    ctx.fillRect(x + 2, y + 2, TILE - 4, 4);
+    ctx.fillRect(x + 2, y + 2, 4, TILE - 4);
+    ctx.fillStyle = "#6a7b91";
+    ctx.fillRect(x + 2, y + TILE - 6, TILE - 4, 4);
+    ctx.fillRect(x + TILE - 6, y + 6, 4, TILE - 8);
+    return;
+  }
+
+  if (code === T.PIPE) {
+    const isTop = tileCode(tx, ty - 1) !== T.PIPE;
+    ctx.fillStyle = "#2fa84f";
+    ctx.fillRect(x, y, TILE, TILE);
+    ctx.fillStyle = "#66db84";
+    ctx.fillRect(x + 4, y, 6, TILE);
+    ctx.fillStyle = "#1b7a37";
+    ctx.fillRect(x + TILE - 7, y, 5, TILE);
+    if (isTop) {
+      ctx.fillStyle = "#2fa84f";
+      ctx.fillRect(x - 3, y, TILE + 6, 10);
+      ctx.fillStyle = "#66db84";
+      ctx.fillRect(x - 3, y + 2, TILE + 6, 3);
+      ctx.fillStyle = "#1b7a37";
+      ctx.fillRect(x - 3, y + 9, TILE + 6, 3);
+    }
+    return;
+  }
+}
+
+function drawTiles() {
+  const lv = Game.level;
+  const startCol = Math.max(0, Math.floor(Game.camX / TILE) - 1);
+  const endCol = Math.min(lv.width - 1, Math.floor((Game.camX + VIEW_W) / TILE) + 1);
+  for (let ty = 0; ty < ROWS; ty++) {
+    for (let tx = startCol; tx <= endCol; tx++) {
+      const code = lv.grid[ty][tx];
+      if (code === T.EMPTY || code === T.HIDDEN) continue;
+      const bump = Game.bumps.find((b) => b.tx === tx && b.ty === ty);
+      if (bump) {
+        ctx.save();
+        ctx.translate(0, -Math.sin((1 - bump.t / 0.22) * Math.PI) * 8);
+        drawTile(code, tx, ty);
+        ctx.restore();
+      } else {
+        drawTile(code, tx, ty);
+      }
+    }
+  }
+}
+
+function drawCoins() {
+  const lv = Game.level;
+  for (const c of lv.coins) {
+    if (c.taken) continue;
+    if (c.x < Game.camX - 40 || c.x > Game.camX + VIEW_W + 40) continue;
+    const sx = 0.35 + 0.65 * Math.abs(Math.cos(c.phase));
+    const bob = Math.sin(c.phase * 0.9) * 2;
+    ctx.save();
+    ctx.translate(c.x, c.y + bob);
+    ctx.scale(sx, 1);
+    ctx.fillStyle = "#f6c53b";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 9, 11, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ffe9a0";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 5, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawSprings() {
+  const lv = Game.level;
+  for (const s of lv.springs) {
+    if (s.x < Game.camX - 60 || s.x > Game.camX + VIEW_W + 60) continue;
+    const topY = s.y + s.squash * 8;
+    // 底座
+    ctx.fillStyle = "#8d3b2a";
+    ctx.fillRect(s.x - 2, s.y + s.h - 5, s.w + 4, 5);
+    // 弹簧圈
+    ctx.strokeStyle = "#cfd8e8";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    const span = s.y + s.h - 5 - topY;
+    for (let i = 0; i < 3; i++) {
+      const y = topY + 4 + span * (i / 3);
+      ctx.moveTo(s.x + 4, y);
+      ctx.lineTo(s.x + s.w - 4, y + 3);
+    }
+    ctx.stroke();
+    // 顶板
+    ctx.fillStyle = "#e8eef8";
+    ctx.fillRect(s.x, topY, s.w, 6);
+    ctx.fillStyle = "#ffd447";
+    ctx.fillRect(s.x, topY, s.w, 2);
+  }
+}
+
+function drawLifts() {
+  const lv = Game.level;
+  for (const l of lv.lifts) {
+    if (l.x < Game.camX - 140 || l.x > Game.camX + VIEW_W + 140) continue;
+    ctx.fillStyle = "#4a5568";
+    ctx.fillRect(l.x, l.y, l.w, l.h);
+    ctx.fillStyle = "#8fa2bd";
+    ctx.fillRect(l.x, l.y, l.w, 4);
+    ctx.fillStyle = "#2c3444";
+    ctx.fillRect(l.x, l.y + l.h - 4, l.w, 4);
+    ctx.fillStyle = "rgba(255,255,255,.12)";
+    for (let i = 0; i < 4; i++) ctx.fillRect(l.x + 8 + i * (l.w / 4), l.y + 3, 6, 6);
+    ctx.fillStyle = Math.sin(l.t * 6) > 0 ? "#ffd447" : "#7fd4a0";
+    ctx.fillRect(l.x + l.w - 12, l.y + 4, 4, 4);
+  }
+}
+
+function drawCheckpoint() {
+  const lv = Game.level;
+  if (!lv.checkpointX) return;
+  const x = lv.checkpointX;
+  if (x < Game.camX - 80 || x > Game.camX + VIEW_W + 80) return;
+  const baseY = 13 * TILE;
+  const active = Game.checkpointActive;
+
+  ctx.fillStyle = "#94a3b8";
+  ctx.fillRect(x + 8, baseY - 74, 4, 74);
+  const wave = Math.sin(Game.tick * 4) * 3;
+  ctx.fillStyle = active ? "#7fe08a" : "#cbd5e1";
+  ctx.beginPath();
+  ctx.moveTo(x + 12, baseY - 72);
+  ctx.lineTo(x + 42, baseY - 62 + wave);
+  ctx.lineTo(x + 12, baseY - 52);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#6b7280";
+  ctx.fillRect(x, baseY - 6, 20, 6);
+
+  ctx.fillStyle = active ? "#7fe08a" : "#9aa8bd";
+  ctx.font = "bold 12px Verdana, 'Microsoft YaHei', sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(active ? "存档" : "存档点", x + 12, baseY - 86);
+}
+
+/** 水管入口的 ↓ 标记 */
+function drawPipeMarks() {
+  const lv = Game.level;
+  for (const pd of lv.pipeDowns) {
+    const cx = pd.x + pd.w / 2;
+    if (cx < Game.camX - 60 || cx > Game.camX + VIEW_W + 60) continue;
+    const bob = Math.sin(Game.tick * 4) * 3;
+    const y = pd.topY - 30 + bob;
+    ctx.fillStyle = "rgba(20,30,50,.65)";
+    ctx.fillRect(cx - 3, y - 14, 6, 14);
+    ctx.fillStyle = "rgba(255,255,255,.88)";
+    ctx.beginPath();
+    ctx.moveTo(cx - 9, y);
+    ctx.lineTo(cx + 9, y);
+    ctx.lineTo(cx, y + 13);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+function drawStarShape(cx, cy, r, rot, fill) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(rot);
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const rad = i % 2 === 0 ? r : r * 0.46;
+    const a = (Math.PI / 5) * i - Math.PI / 2;
+    if (i === 0) ctx.moveTo(Math.cos(a) * rad, Math.sin(a) * rad * 1.05);
+    else ctx.lineTo(Math.cos(a) * rad, Math.sin(a) * rad * 1.05);
+  }
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawItems() {
+  const lv = Game.level;
+  for (const it of lv.items) {
+    if (!it.alive) continue;
+    if (it.x < Game.camX - 60 || it.x > Game.camX + VIEW_W + 60) continue;
+    const cx = it.x + it.w / 2;
+    const cy = it.y + it.h / 2;
+
+    if (it.type === "mushroom") {
+      // 菌柄
+      ctx.fillStyle = "#ffe9cf";
+      ctx.fillRect(cx - 7, cy - 1, 14, 13);
+      ctx.fillStyle = "#e8cbb0";
+      ctx.fillRect(cx - 7, cy + 10, 14, 3);
+      // 菌盖
+      ctx.fillStyle = "#e14b3f";
+      ctx.beginPath();
+      ctx.ellipse(cx, cy - 1, 13, 11, 0, Math.PI, 0);
+      ctx.fill();
+      ctx.fillRect(cx - 13, cy - 2, 26, 3);
+      // 白点
+      ctx.fillStyle = "#fff6ec";
+      ctx.beginPath();
+      ctx.arc(cx - 6, cy - 4, 3.6, 0, Math.PI * 2);
+      ctx.arc(cx + 5, cy - 6, 4.2, 0, Math.PI * 2);
+      ctx.fill();
+      // 眼睛
+      ctx.fillStyle = "#3a2a1c";
+      ctx.fillRect(cx - 4, cy + 4, 2, 3);
+      ctx.fillRect(cx + 2, cy + 4, 2, 3);
+    } else if (it.type === "flower") {
+      const sway = Math.sin(it.phase * 4) * 2;
+      // 光晕
+      ctx.save();
+      ctx.globalAlpha = 0.3 + 0.12 * Math.sin(it.phase * 8);
+      ctx.fillStyle = "#ffca5c";
+      ctx.beginPath();
+      ctx.arc(cx, cy + sway, 15, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      // 花茎与叶子
+      ctx.fillStyle = "#3f9a4d";
+      ctx.fillRect(cx - 2, cy + 4 + sway, 4, 10);
+      ctx.fillStyle = "#5bc06a";
+      ctx.beginPath();
+      ctx.ellipse(cx - 8, cy + 9 + sway, 6, 3, -0.4, 0, Math.PI * 2);
+      ctx.ellipse(cx + 8, cy + 9 + sway, 6, 3, 0.4, 0, Math.PI * 2);
+      ctx.fill();
+      // 花瓣
+      for (let i = 0; i < 6; i++) {
+        const a = (Math.PI / 3) * i + it.phase * 1.2;
+        ctx.fillStyle = i % 2 === 0 ? "#ff5b2e" : "#ffb43c";
+        ctx.beginPath();
+        ctx.ellipse(cx + Math.cos(a) * 8, cy + sway + Math.sin(a) * 8, 6, 5, a, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // 花心
+      ctx.fillStyle = "#fff2a8";
+      ctx.beginPath();
+      ctx.arc(cx, cy + sway, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#e2571c";
+      ctx.beginPath();
+      ctx.arc(cx, cy + sway, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+      // 眼睛
+      ctx.fillStyle = "#3a2a1c";
+      ctx.fillRect(cx - 3, cy + sway - 1, 2, 2);
+      ctx.fillRect(cx + 1, cy + sway - 1, 2, 2);
+    } else {
+      const bob = Math.sin(it.phase * 6) * 2;
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      drawStarShape(cx, cy + bob, 16, it.phase * 3, "#fff3a0");
+      ctx.restore();
+      drawStarShape(cx, cy + bob, 14, it.phase * 3, "#ffd23f");
+      drawStarShape(cx, cy + bob, 8, it.phase * 3, "#fff0a8");
+      ctx.fillStyle = "#3a2a1c";
+      ctx.fillRect(cx - 4, cy + bob - 2, 2, 3);
+      ctx.fillRect(cx + 2, cy + bob - 2, 2, 3);
+    }
+  }
+}
+
+function drawFireballs() {
+  for (const f of Game.fireballs) {
+    if (f.x < Game.camX - 60 || f.x > Game.camX + VIEW_W + 60) continue;
+    const cx = f.x + f.w / 2;
+    const cy = f.y + f.h / 2;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    // 光晕
+    ctx.globalAlpha = 0.4;
+    ctx.fillStyle = "#ffcf5c";
+    ctx.beginPath();
+    ctx.arc(0, 0, 11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    // 旋转的四瓣火舌
+    ctx.rotate(f.spin);
+    ctx.fillStyle = "#ff7a1a";
+    for (let i = 0; i < 4; i++) {
+      ctx.rotate(Math.PI / 2);
+      ctx.beginPath();
+      ctx.ellipse(0, -7, 4.2, 7.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // 火心
+    ctx.fillStyle = "#ffe066";
+    ctx.beginPath();
+    ctx.arc(0, 0, 4.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawBonusExit(x) {
+  const groundY = 13 * TILE;
+  ctx.fillStyle = "#2b1d3a";
+  ctx.fillRect(x - 10, groundY - 96, 60, 96);
+  ctx.fillStyle = "#6b4c8a";
+  ctx.fillRect(x - 10, groundY - 96, 8, 96);
+  ctx.fillRect(x + 42, groundY - 96, 8, 96);
+  ctx.fillStyle = "#8a68ad";
+  ctx.fillRect(x - 10, groundY - 96, 60, 8);
+  ctx.fillStyle = "#ffd447";
+  ctx.fillRect(x + 30, groundY - 52, 6, 6);
+  ctx.fillStyle = "rgba(255,255,255,.85)";
+  ctx.font = "bold 14px Verdana, 'Microsoft YaHei', sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("出口 →", x + 20, groundY - 112);
+}
+
+function drawFlag() {
+  const lv = Game.level;
+  if (lv.isBonus) { drawBonusExit(lv.flagX); return; }
+  const baseX = lv.flagX;
+  const groundY = 13 * TILE;
+  const topY = groundY - 8 * TILE;
+
+  ctx.fillStyle = "#6b7280";
+  ctx.fillRect(baseX + 10, topY, 5, 8 * TILE);
+  ctx.fillStyle = "#d7dee8";
+  ctx.fillRect(baseX + 11, topY, 2, 8 * TILE);
+
+  // 顶部圆球
+  ctx.fillStyle = "#f7d34d";
+  ctx.beginPath();
+  ctx.arc(baseX + 12.5, topY - 4, 7, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 飘旗
+  const wave = Math.sin(Game.tick * 4) * 5;
+  ctx.fillStyle = "#e8483c";
+  ctx.beginPath();
+  ctx.moveTo(baseX + 12, topY + 12);
+  ctx.lineTo(baseX + 12 + 52, topY + 26 + wave);
+  ctx.lineTo(baseX + 12, topY + 42);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(baseX + 30, topY + 27 + wave * 0.6, 7, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 底座
+  ctx.fillStyle = "#8b6b45";
+  ctx.fillRect(baseX + 2, groundY - 12, 22, 12);
+  ctx.fillStyle = "#a5825a";
+  ctx.fillRect(baseX + 4, groundY - 12, 18, 4);
+
+  // 终点门（视觉提示）
+  ctx.fillStyle = "rgba(255,255,255,.14)";
+  ctx.fillRect(baseX - 4, topY - 20, 34, 8 * TILE + 20);
+}
+
+function drawFx() {
+  for (const f of Game.fx) {
+    ctx.save();
+    ctx.globalAlpha = clamp(f.life / f.max, 0, 1);
+    ctx.fillStyle = f.color;
+    ctx.fillRect(f.x - f.size / 2, f.y - f.size / 2, f.size, f.size);
+    ctx.restore();
+  }
+}
+
+/** 飘分文字（世界坐标，随镜头移动） */
+function drawPops() {
+  if (!Game.pops.length) return;
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "bold 16px Verdana, 'Microsoft YaHei', sans-serif";
+  ctx.lineJoin = "round";
+  for (const q of Game.pops) {
+    ctx.globalAlpha = clamp(q.life / q.max, 0, 1);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(10,18,32,.7)";
+    ctx.strokeText(q.text, q.x, q.y);
+    ctx.fillStyle = q.color;
+    ctx.fillText(q.text, q.x, q.y);
+  }
+  ctx.restore();
+}
+
+function drawDebris() {
+  for (const d of Game.debris) {
+    if (d.x < Game.camX - 60 || d.x > Game.camX + VIEW_W + 60) continue;
+    ctx.save();
+    ctx.globalAlpha = clamp(d.life / 1.8, 0, 1);
+    ctx.translate(d.x, d.y);
+    ctx.rotate(d.rot);
+    const s = d.size;
+    ctx.fillStyle = "#c1703f";
+    ctx.fillRect(-s / 2, -s / 2, s, s);
+    ctx.fillStyle = "#d98d58";
+    ctx.fillRect(-s / 2, -s / 2, s, 3);
+    ctx.fillStyle = "#8d4d26";
+    ctx.fillRect(-s / 2, s / 2 - 3, s, 3);
+    ctx.restore();
+  }
+}
+
+/* ============================================================
+   渲染 · 角色与敌人
+   ============================================================ */
+/** 无敌星残影：金色半透明残像，越旧越淡 */
+function drawStarTrail() {
+  if (!Game.starTrail.length) return;
+  for (const t of Game.starTrail) {
+    ctx.save();
+    ctx.globalAlpha = 0.16 * clamp(t.life / 0.28, 0, 1);
+    ctx.fillStyle = "#ffe066";
+    ctx.fillRect(t.x, t.y, t.w, t.h);
+    ctx.restore();
+  }
+}
+
+function drawPlayer() {
+  const p = Game.player;
+  if (!p || (p.dead && p.deadTimer <= 0)) return;
+
+  const walking = p.onGround && Math.abs(p.vx) > 24;
+  const swing = walking ? Math.sin(p.animTime * 2.4) : 0;
+  const bob = walking ? Math.abs(Math.sin(p.animTime * 2.4)) * 1.5 : 0;
+  const scaleY = p.h / 30;
+  const starFlash = p.star > 0 && Math.floor(Game.tick * 12) % 2 === 0;
+
+  ctx.save();
+  ctx.translate(p.x + p.w / 2, p.y + p.h - 30 * scaleY - bob + (p.dead ? -6 : 0));
+  ctx.scale(p.dir, scaleY);
+  if (p.dead) ctx.rotate(0.35);
+
+  const skin = starFlash ? "#fff2a8" : "#f2c19a";
+  const fiery = p.fire && !starFlash;
+  const red = starFlash ? "#fff6c8" : (fiery ? "#f7f7f7" : "#e14b3f");
+  const redDark = starFlash ? "#ffe680" : (fiery ? "#d5d5d5" : "#b7362c");
+  const blue = starFlash ? "#ffe066" : (fiery ? "#e14b3f" : "#2f5bd6");
+  const blueDark = starFlash ? "#e6b800" : (fiery ? "#b7362c" : "#22409b");
+
+  // 帽子
+  ctx.fillStyle = red;
+  ctx.fillRect(-11, 0, 22, 6);
+  ctx.fillStyle = redDark;
+  ctx.fillRect(1, 4, 12, 3);
+
+  // 脸
+  ctx.fillStyle = skin;
+  ctx.fillRect(-9, 6, 18, 9);
+  // 眼睛
+  ctx.fillStyle = "#23304a";
+  ctx.fillRect(3, 8, 3, 4);
+  ctx.fillRect(-6, 8, 3, 4);
+  // 胡子
+  ctx.fillStyle = "#4a3324";
+  ctx.fillRect(1, 12, 7, 2);
+
+  // 上衣与手臂
+  ctx.fillStyle = red;
+  ctx.fillRect(-10, 15, 20, 8);
+  ctx.fillRect(-13, 16, 4, 7);
+  ctx.fillRect(9, 16, 4, 7);
+  ctx.fillStyle = skin;
+  ctx.fillRect(-13, 22, 4, 3);
+  ctx.fillRect(9, 22, 4, 3);
+
+  // 背带裤
+  ctx.fillStyle = blue;
+  ctx.fillRect(-8, 18, 16, 9);
+  ctx.fillStyle = "#ffd447";
+  ctx.fillRect(-7, 19, 2, 2);
+  ctx.fillRect(5, 19, 2, 2);
+
+  // 腿
+  ctx.fillStyle = blueDark;
+  if (!p.onGround) {
+    ctx.fillRect(-9, 26, 7, 4);
+    ctx.fillRect(2, 26, 7, 4);
+    ctx.fillStyle = "#5b3a20";
+    ctx.fillRect(-10, 28, 8, 2);
+    ctx.fillRect(3, 28, 8, 2);
+  } else {
+    const l1 = swing * 2.2;
+    const l2 = -swing * 2.2;
+    ctx.fillRect(-7 + l1, 26, 6, 4);
+    ctx.fillRect(1 + l2, 26, 6, 4);
+    ctx.fillStyle = "#5b3a20";
+    ctx.fillRect(-8 + l1, 29, 8, 2);
+    ctx.fillRect(1 + l2, 29, 8, 2);
+  }
+  ctx.restore();
+}
+
+function drawCannons() {
+  const lv = Game.level;
+  for (const c of lv.cannons) {
+    if (!c.alive) continue;
+    if (c.x < Game.camX - 80 || c.x > Game.camX + VIEW_W + 80) continue;
+
+    // 底座
+    ctx.fillStyle = "#3a4354";
+    ctx.fillRect(c.x, c.y + 14, c.w, c.h - 14);
+    ctx.fillStyle = "#59647a";
+    ctx.fillRect(c.x + 3, c.y + 17, c.w - 6, 5);
+
+    // 炮身
+    ctx.fillStyle = "#2b3243";
+    ctx.fillRect(c.x + 2, c.y + 4, c.w - 4, 14);
+    ctx.fillStyle = "#4c586e";
+    ctx.fillRect(c.x + 5, c.y + 6, c.w - 10, 4);
+
+    // 炮口朝向玩家
+    const dir = c.dir || 1;
+    ctx.fillStyle = "#151a24";
+    ctx.fillRect(dir > 0 ? c.x + c.w - 8 : c.x - 4, c.y + 7, 12, 8);
+    ctx.fillStyle = "#0d1118";
+    ctx.fillRect(dir > 0 ? c.x + c.w + 1 : c.x - 3, c.y + 9, 3, 4);
+
+    // 开火闪光
+    if (c.fireT > 0) {
+      ctx.save();
+      ctx.globalAlpha = clamp(c.fireT / 0.18, 0, 1);
+      ctx.fillStyle = "#ffd166";
+      ctx.beginPath();
+      ctx.arc(c.x + c.w / 2 + dir * 20, c.y + 11, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // 铆钉
+    ctx.fillStyle = "#7f8ea6";
+    ctx.fillRect(c.x + 5, c.y + 22, 5, 5);
+    ctx.fillRect(c.x + c.w - 10, c.y + 22, 5, 5);
+  }
+}
+
+function drawBullets() {
+  const lv = Game.level;
+  for (const b of lv.bullets) {
+    if (!b.alive) continue;
+    if (b.x < Game.camX - 60 || b.x > Game.camX + VIEW_W + 60) continue;
+    const cx = b.x + b.w / 2;
+    const cy = b.y + b.h / 2;
+    const dir = b.vx >= 0 ? 1 : -1;
+
+    // 尾迹
+    ctx.fillStyle = "rgba(255,180,90,.35)";
+    ctx.beginPath();
+    ctx.ellipse(cx - dir * 13, cy, 8, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 弹体
+    ctx.fillStyle = "#2b3243";
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 10, 7.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#59647a";
+    ctx.beginPath();
+    ctx.ellipse(cx - dir * 2, cy - 2, 5, 3.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#151a24";
+    ctx.beginPath();
+    ctx.ellipse(cx + dir * 6, cy, 3, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 眼睛
+    ctx.fillStyle = "#ffd166";
+    ctx.fillRect(cx + dir * 2 - 1.5, cy - 2, 3, 3);
+  }
+}
+
+function drawEnemies() {
+  const lv = Game.level;
+  for (const e of lv.enemies) {
+    if (!e.alive) continue;
+    if (e.x < Game.camX - 60 || e.x > Game.camX + VIEW_W + 60) continue;
+
+    const squash = e.dead > 0;
+    ctx.save();
+    ctx.translate(e.x + e.w / 2, e.y + e.h);
+    if (squash) ctx.scale(1.15, 0.55);
+
+    const step = Math.sin(e.anim * 9) * 2;
+
+    if (e.type === "koopa") {
+      const shellOnly = e.state !== "walk";
+      if (!shellOnly) {
+        // 脚
+        ctx.fillStyle = "#f0c14b";
+        ctx.fillRect(-9 + step, -5, 8, 5);
+        ctx.fillRect(1 - step, -5, 8, 5);
+        // 头
+        const hx = e.vx >= 0 ? 5 : -17;
+        ctx.fillStyle = "#f5d76e";
+        ctx.fillRect(hx, -25, 12, 12);
+        ctx.fillStyle = "#e0b93c";
+        ctx.fillRect(hx, -14, 12, 3);
+        ctx.fillStyle = "#1d2635";
+        ctx.fillRect(hx + (e.vx >= 0 ? 7 : 2), -21, 3, 4);
+        ctx.fillStyle = "#2fa84f";
+        ctx.fillRect(hx + 1, -28, 10, 4);
+      }
+      // 龟壳
+      const sy = shellOnly ? -19 : -23;
+      const sw = shellOnly ? 26 : 22;
+      const sh = shellOnly ? 19 : 16;
+      ctx.fillStyle = "#2fa84f";
+      ctx.beginPath();
+      ctx.ellipse(0, sy + sh / 2, sw / 2, sh / 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#8be06a";
+      ctx.beginPath();
+      ctx.ellipse(0, sy + sh / 2 - 2, sw / 2 - 4, sh / 2 - 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#e8f7d8";
+      for (let i = -1; i <= 1; i++) ctx.fillRect(i * 7 - 1, sy + 5, 2, sh - 8);
+      if (shellOnly) {
+        ctx.fillStyle = "#1b7a37";
+        ctx.fillRect(-9, sy + sh - 5, 18, 3);
+      }
+      if (e.state === "slide") {
+        const dir = e.vx > 0 ? -1 : 1;
+        ctx.fillStyle = "rgba(255,255,255,.55)";
+        ctx.fillRect(dir * 20, sy + 5, 8, 3);
+        ctx.fillRect(dir * 26, sy + 11, 5, 3);
+      }
+    } else if (e.type === "flyer") {
+      // 翅膀（上下扇动）
+      const flap = Math.sin(e.anim * 14) * 0.55;
+      ctx.fillStyle = "#e8f7d8";
+      ctx.save();
+      ctx.translate(-11, -18);
+      ctx.rotate(-0.45 - flap);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 12, 5.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      ctx.save();
+      ctx.translate(11, -18);
+      ctx.rotate(0.45 + flap);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 12, 5.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // 龟壳
+      ctx.fillStyle = "#2fa84f";
+      ctx.beginPath();
+      ctx.ellipse(0, -14, 11, 12, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#8be06a";
+      ctx.beginPath();
+      ctx.ellipse(0, -15, 7.5, 8.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 头
+      const fhx = e.vx >= 0 ? 7 : -17;
+      ctx.fillStyle = "#f5d76e";
+      ctx.fillRect(fhx, -29, 11, 11);
+      ctx.fillStyle = "#e0b93c";
+      ctx.fillRect(fhx, -20, 11, 3);
+      ctx.fillStyle = "#1d2635";
+      ctx.fillRect(fhx + (e.vx >= 0 ? 6 : 2), -26, 3, 4);
+      ctx.fillStyle = "#2fa84f";
+      ctx.fillRect(fhx + 1, -32, 9, 4);
+    } else {
+      // 脚
+      ctx.fillStyle = "#3b2a1b";
+      ctx.fillRect(-10 + step, -4, 8, 4);
+      ctx.fillRect(2 - step, -4, 8, 4);
+
+      // 身体
+      ctx.fillStyle = "#a8542c";
+      ctx.fillRect(-11, -20, 22, 16);
+      ctx.fillStyle = "#8b3f1e";
+      ctx.fillRect(-11, -8, 22, 4);
+      ctx.fillStyle = "#c9713c";
+      ctx.fillRect(-8, -18, 16, 5);
+
+      // 眼睛
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(-8, -15, 6, 6);
+      ctx.fillRect(2, -15, 6, 6);
+      ctx.fillStyle = "#1d2635";
+      ctx.fillRect(-6, -13, 3, 4);
+      ctx.fillRect(3, -13, 3, 4);
+
+      // 眉毛
+      ctx.fillStyle = "#5c2d12";
+      ctx.fillRect(-8, -17, 6, 2);
+      ctx.fillRect(2, -17, 6, 2);
+    }
+    ctx.restore();
+  }
+}
+
+/* ============================================================
+   渲染 · 关底 Boss
+   ============================================================ */
+function drawBoss() {
+  const lv = Game.level;
+  const b = lv && lv.boss;
+  if (!b || (!b.alive && b.deadT <= 0)) return;
+  if (b.x > Game.camX + VIEW_W + 120 || b.x + b.w < Game.camX - 120) return;
+
+  const shrink = b.alive ? 1 : Math.max(0.35, b.deadT / 0.9);
+  const flash = b.invuln > 0 && Math.floor(Game.tick * 16) % 2 === 0;
+  const step = Math.sin(b.anim * 7) * 4;
+
+  ctx.save();
+  ctx.globalAlpha = b.alive ? 1 : clamp(b.deadT / 0.9, 0, 1);
+  ctx.translate(b.x + b.w / 2, b.y + b.h);
+  ctx.scale((b.vx >= 0 ? 1 : -1) * shrink, shrink);
+
+  // 脚
+  ctx.fillStyle = "#e8b83c";
+  ctx.fillRect(-24 + step, -10, 18, 10);
+  ctx.fillRect(6 - step, -10, 18, 10);
+
+  // 背上的尖刺
+  ctx.fillStyle = "#d94f3d";
+  for (let i = -1; i <= 1; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * 18, -70);
+    ctx.lineTo(i * 18 + 7, -56);
+    ctx.lineTo(i * 18 - 7, -56);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // 龟壳
+  ctx.fillStyle = "#2fa84f";
+  ctx.beginPath();
+  ctx.ellipse(0, -32, 30, 26, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#8be06a";
+  ctx.beginPath();
+  ctx.ellipse(0, -34, 23, 19, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#e8f7d8";
+  for (let i = -2; i <= 2; i++) ctx.fillRect(i * 10 - 1, -48, 2, 28);
+
+  // 头（朝向前进方向）
+  ctx.fillStyle = flash ? "#ffffff" : "#f5d76e";
+  ctx.fillRect(14, -54, 26, 24);
+  ctx.fillStyle = "#e0b93c";
+  ctx.fillRect(14, -33, 26, 5);
+  // 眼睛
+  ctx.fillStyle = "#1d2635";
+  ctx.fillRect(31, -48, 5, 7);
+  ctx.fillRect(21, -48, 5, 7);
+  // 眉毛（显得凶一点）
+  ctx.fillStyle = "#8a4a22";
+  ctx.fillRect(31, -51, 6, 2);
+  ctx.fillRect(20, -51, 6, 2);
+
+  ctx.restore();
+
+  // 血条
+  if (b.alive) {
+    const w = 60, cx = b.x + b.w / 2;
+    ctx.save();
+    ctx.fillStyle = "rgba(10,18,32,.65)";
+    ctx.fillRect(cx - w / 2, b.y - 92, w, 8);
+    ctx.fillStyle = b.hp > 1 ? "#ff6b5e" : "#ffd447";
+    ctx.fillRect(cx - w / 2 + 1, b.y - 91, (w - 2) * Math.max(0, b.hp / b.maxHp), 6);
+    ctx.restore();
+  }
+}
+
+/* ============================================================
+   渲染 · HUD 与界面
+   ============================================================ */
+function drawHUD() {
+  ctx.save();
+  ctx.fillStyle = "rgba(10,18,32,.55)";
+  ctx.fillRect(14, 14, 636, 44);
+  ctx.fillRect(VIEW_W - 254, 14, 240, 44);
+
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#e8eefb";
+  ctx.font = "bold 18px Verdana, 'Microsoft YaHei', sans-serif";
+  ctx.fillText("分数 " + String(Game.score).padStart(6, "0"), 30, 37);
+
+  // 金币图标
+  ctx.fillStyle = "#f6c53b";
+  ctx.beginPath();
+  ctx.ellipse(196, 37, 7, 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#ffeaa4";
+  ctx.beginPath();
+  ctx.ellipse(196, 37, 3.5, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#e8eefb";
+  ctx.fillText("×" + String(Game.coins).padStart(2, "0"), 210, 37);
+
+  // 生命：最多画 4 个图标，再多用 ×N 表示，避免和右侧状态区重叠
+  const maxHearts = Math.min(Math.max(0, Game.lives), 4);
+  for (let i = 0; i < maxHearts; i++) {
+    const hx = 288 + i * 22;
+    ctx.fillStyle = "#e14b3f";
+    ctx.fillRect(hx, 30, 14, 10);
+    ctx.fillRect(hx + 2, 26, 4, 4);
+    ctx.fillRect(hx + 8, 26, 4, 4);
+    ctx.fillRect(hx + 4, 40, 6, 2);
+  }
+  if (Game.lives > 4) {
+    ctx.fillStyle = "#e14b3f";
+    ctx.font = "bold 16px Verdana, 'Microsoft YaHei', sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText("×" + Game.lives, 376, 37);
+  }
+
+  // 变大 / 无敌星状态
+  const pl = Game.player;
+  if (pl && pl.star > 0) {
+    drawStarShape(424, 36, 10, Game.tick * 3, "#ffe066");
+    ctx.fillStyle = "#ffe066";
+    ctx.font = "bold 15px Verdana, 'Microsoft YaHei', sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(Math.ceil(pl.star) + "s", 438, 37);
+  } else if (pl && pl.fire) {
+    ctx.fillStyle = "#ff7a1a";
+    ctx.beginPath();
+    ctx.arc(424, 36, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ffe066";
+    ctx.beginPath();
+    ctx.arc(424, 37, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ffb43c";
+    ctx.font = "bold 15px Verdana, 'Microsoft YaHei', sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText("火焰", 438, 37);
+  } else if (pl && pl.big) {
+    ctx.fillStyle = "#ffb84d";
+    ctx.font = "bold 15px Verdana, 'Microsoft YaHei', sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText("变大", 420, 37);
+  }
+
+  // 最高分
+  ctx.fillStyle = "#8f9bb3";
+  ctx.font = "bold 15px Verdana, 'Microsoft YaHei', sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("最高 " + String(Game.best).padStart(6, "0"), 505, 37);
+
+  // 时间
+  ctx.textAlign = "right";
+  const t = Math.max(0, Math.ceil(Game.timeLeft));
+  ctx.fillStyle = t <= 20 ? "#ff8a80" : "#e8eefb";
+  ctx.fillText("时间 " + String(t).padStart(3, "0"), VIEW_W - 150, 37);
+
+  // 关卡名
+  ctx.fillStyle = "#9fb0cc";
+  ctx.font = "14px Verdana, 'Microsoft YaHei', sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillText(Game.level.name, VIEW_W - 30, 37);
+  ctx.restore();
+}
+
+function drawCenterPanel(title, lines, accent = "#ffffff") {
+  ctx.save();
+  ctx.fillStyle = "rgba(8,14,26,.78)";
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  ctx.fillStyle = accent;
+  ctx.font = "bold 52px Verdana, 'Microsoft YaHei', sans-serif";
+  ctx.fillText(title, VIEW_W / 2, VIEW_H / 2 - 90);
+
+  ctx.font = "18px Verdana, 'Microsoft YaHei', sans-serif";
+  lines.forEach((line, i) => {
+    ctx.fillStyle = i === lines.length - 1 ? "#7fd4a0" : "#c3cee0";
+    ctx.fillText(line, VIEW_W / 2, VIEW_H / 2 - 20 + i * 34);
+  });
+  ctx.restore();
+}
+
+function drawOverlay() {
+  const blink = Math.sin(Game.tick * 3.4) > -0.2;
+
+  if (Game.phase === "title") {
+    const lines = [
+      "← → 移动　↑ / 空格 跳跃（长按更高）　↓ 钻水管",
+      "顶砖拿金币、踩乌龟缩壳，再把壳踢出去撞怪",
+      "吃火焰花按 K / X 吐火球；弹簧能把你弹得更高",
+      "隐藏砖、多段金币砖、带 ↓ 标记的水管都有惊喜",
+      "第三关终点有 Boss 把守，踩它五下才能打开城门",
+      "满 " + COINS_PER_LIFE + " 金币自动 1UP；掉坑会从存档点复活",
+    ];
+    if (Game.unlocked > 0) {
+      lines.push("已解锁 " + (Game.unlocked + 1) + " / " + LEVEL_SPECS.length + " 关　按 C 继续");
+    }
+    lines.push(blink ? "按 Enter 开始新游戏" : " ");
+    drawCenterPanel("超级马里奥", lines, "#ffd447");
+  } else if (Game.phase === "paused") {
+    drawCenterPanel("已暂停", ["按 P 继续　·　R 重来本关"], "#8fd3ff");
+  } else if (Game.phase === "levelclear") {
+    // 结算逐条出现：旗杆分 → 金币 → 时间奖励 → 本关得分/最高分
+    const cd = Game.clearData || {
+      t: 0, bonus: 0, gained: 0, flagBonus: 500, lvScore: 0, levelBest: 0, newRecord: false,
+    };
+    const lines = [];
+    if (cd.t > 0.1) lines.push("旗杆奖励 +" + cd.flagBonus);
+    if (cd.t > 0.55) lines.push("金币 " + Game.coins + " 枚");
+    if (cd.t > 1.0) lines.push("剩余时间 → +" + cd.gained + " 分");
+    if (cd.t > 1.5) lines.push("本关得分 " + String(cd.lvScore || 0).padStart(6, "0"));
+    if (cd.t > 1.9) {
+      lines.push("本关最高 " + String(cd.levelBest || 0).padStart(6, "0") +
+        (cd.newRecord ? "　新纪录！" : ""));
+    }
+    drawCenterPanel(Game.level.name + " 完成！", lines.length ? lines : ["…"], "#7fd4a0");
+  } else if (Game.phase === "gameover") {
+    drawCenterPanel("游戏结束", [
+      "最终分数 " + String(Game.score).padStart(6, "0"),
+      "金币 " + Game.coins + " 枚　最高分 " + String(Game.best).padStart(6, "0"),
+      blink ? "按 Enter 重新开始" : " ",
+    ], "#ff8a80");
+  } else if (Game.phase === "win") {
+    drawCenterPanel("全部通关！", [
+      "你走完了全部 " + LEVEL_SPECS.length + " 关",
+      "最终分数 " + String(Game.score).padStart(6, "0"),
+      "最高分 " + String(Game.best).padStart(6, "0"),
+      blink ? "按 Enter 再来一轮" : " ",
+    ], "#ffd447");
+  }
+
+  if (Game.toastTimer > 0 && Game.phase !== "title") {
+    ctx.save();
+    ctx.globalAlpha = clamp(Game.toastTimer / 1.4, 0, 1);
+    ctx.fillStyle = "rgba(10,18,32,.7)";
+    ctx.fillRect(VIEW_W / 2 - 110, 84, 220, 40);
+    ctx.fillStyle = "#e8eefb";
+    ctx.font = "bold 17px Verdana, 'Microsoft YaHei', sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(Game.toastText, VIEW_W / 2, 104);
+    ctx.restore();
+  }
+}
+
+/* ============================================================
+   总渲染
+   ============================================================ */
+function render() {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  drawBackground();
+
+  const shakeOn = !REDUCE_MOTION && Game.shake > 0;
+  const sx = shakeOn ? rand(-Game.shake, Game.shake) : 0;
+  const sy = shakeOn ? rand(-Game.shake, Game.shake) : 0;
+
+  ctx.save();
+  ctx.translate(-Math.round(Game.camX) + sx, sy);
+  drawTiles();
+  drawLifts();
+  drawSprings();
+  drawDebris();
+  drawCheckpoint();
+  drawFlag();
+  drawPipeMarks();
+  drawCoins();
+  drawItems();
+  drawFireballs();
+  drawCannons();
+  drawBullets();
+  drawEnemies();
+  drawBoss();
+  drawStarTrail();
+  drawPlayer();
+  drawFx();
+  drawPops();
+  ctx.restore();
+
+  drawHUD();
+  drawOverlay();
+}
+
+/* ============================================================
+   主循环与启动
+   ============================================================ */
+let lastTime = 0;
+
+/* ============================================================
+   手柄支持：方向键 + A/B/X 映射到移动 / 跳跃 / 火球
+   ============================================================ */
+const Pad = { active: false };
+function pollGamepad() {
+  if (!navigator.getGamepads) return;
+  let pad = null;
+  try {
+    for (const p of navigator.getGamepads()) {
+      if (p && p.connected) { pad = p; break; }
+    }
+  } catch (e) { return; }
+
+  if (!pad) {
+    if (Pad.active) {
+      Pad.active = false;
+      for (const k of ["left", "right", "jump", "shoot", "down"]) setAction(k, false);
+    }
+    return;
+  }
+
+  const btn = (i) => !!(pad.buttons[i] && pad.buttons[i].pressed);
+  const ax = pad.axes[0] || 0;
+  const st = {
+    left: btn(14) || ax < -0.4,
+    right: btn(15) || ax > 0.4,
+    jump: btn(0) || btn(3),
+    shoot: btn(2) || btn(1),
+    down: btn(13),
+  };
+  const any = st.left || st.right || st.jump || st.shoot || st.down;
+  if (!any && !Pad.active) return;   // 没手柄输入时不干扰键盘
+  Pad.active = any;
+  for (const k of Object.keys(st)) setAction(k, st[k]);
+}
+
+function frame(now) {
+  if (!lastTime) lastTime = now;
+  const dt = Math.min((now - lastTime) / 1000, 1 / 30);
+  lastTime = now;
+  pollGamepad();
+  update(dt);
+  render();
+  requestAnimationFrame(frame);
+}
+
+/* 供外部工具 / 自动化脚本使用的入口 */
+window.MarioGame = Game;
+window.MarioAPI = {
+  start() { if (Game.phase === "title") Game.onConfirm(); },
+  /** 读取当前键位（动作 → 键码数组） */
+  bindings() { return JSON.parse(JSON.stringify(KEY_BINDS)); },
+  /** 自定义键位，例如 setBindings({ jump: ["KeyL"], shoot: ["KeyI"] }) */
+  setBindings(map) {
+    for (const k of Object.keys(DEFAULT_BINDS)) {
+      if (Array.isArray(map[k]) && map[k].length) KEY_BINDS[k] = map[k].slice();
+    }
+    saveBinds();
+    return this.bindings();
+  },
+  resetBindings() {
+    for (const k of Object.keys(DEFAULT_BINDS)) KEY_BINDS[k] = DEFAULT_BINDS[k].slice();
+    saveBinds();
+    return this.bindings();
+  },
+  /** 运行内置自测（页面加 ?test=1 也会自动运行） */
+  selfTest() { return runSelfTest(); },
+  restart() {
+    if (Game.player) { Game.player.big = false; Game.player.fire = false; Game.player.star = 0; }
+    Game.score = 0; Game.lives = 3; Game.coins = 0; Game.loadLevel(0);
+  },
+  jumpTo(levelIndex) { Game.loadLevel(levelIndex); },
+  bonus() { if (!Game.inBonus) Game.loadBonus(); },
+  state() {
+    const p = Game.player;
+    return {
+      phase: Game.phase,
+      level: Game.levelIndex + 1,
+      levelName: Game.level.name,
+      score: Game.score,
+      best: Game.best,
+      coins: Game.coins,
+      lives: Game.lives,
+      time: Math.ceil(Game.timeLeft),
+      inBonus: Game.inBonus,
+      checkpointActive: Game.checkpointActive,
+      checkpointX: Math.round(Game.checkpointX),
+      player: p ? { x: Math.round(p.x), y: Math.round(p.y), h: p.h, big: p.big, fire: !!p.fire, star: +p.star.toFixed(2), onGround: p.onGround, dir: p.dir } : null,
+      fireballs: Game.fireballs.length,
+      combo: Game.combo,
+      unlocked: Game.unlocked,
+      levelBest: Game.levelBests[Game.levelIndex] || 0,
+      pipeAnim: Game.pipeAnim ? Game.pipeAnim.mode : null,
+      starTrail: Game.starTrail.length,
+      musicScene: Music.bonus ? "bonus" : "main",
+      boss: Game.level.boss
+        ? { hp: Game.level.boss.hp, alive: Game.level.boss.alive, maxHp: Game.level.boss.maxHp }
+        : null,
+      progress: p ? Math.min(1, +(p.x / Game.level.flagX).toFixed(3)) : 0,
+    };
+  },
+};
+
+/* ============================================================
+   内置自测：页面加 ?test=1 或调用 MarioAPI.selfTest()
+   ============================================================ */
+function runSelfTest() {
+  const results = [];
+  const check = (name, ok) => { results.push({ name, ok: !!ok }); return !!ok; };
+  const step = (n) => { for (let i = 0; i < n; i++) update(1 / 60); };
+  let bakU = null, bakB = null;
+  try {
+    bakU = localStorage.getItem("mario_unlocked");
+    bakB = localStorage.getItem("mario_level_bests");
+  } catch (e) {}
+
+  try {
+    check("关卡数据完整",
+      LEVEL_SPECS.length === 3 && typeof makeLevel(LEVEL_SPECS[0]).grid[0][0] === "number");
+
+    Game.loadLevel(1);
+    check("1-2 有炮台", Game.level.cannons.length === 2);
+    check("1-2 有飞行龟", Game.level.enemies.filter((e) => e.type === "flyer").length === 2);
+    check("1-2 有横向平台", Game.level.lifts.some((l) => l.axis === "x"));
+
+    const c = Game.level.cannons[0];
+    Game.player.invuln = 5;
+    Game.player.x = c.x - 650;
+    Game.player.y = 12 * TILE - Game.player.h;
+    // 逐帧检测：炮弹飞行途中可能被地形或玩家清掉，只看“是否发射过”
+    let fired = false;
+    for (let i = 0; i < 180 && !fired; i++) {
+      update(1 / 60);
+      fired = Game.level.bullets.length > 0;
+    }
+    check("炮台会开火", fired);
+
+    Game.loadLevel(1);
+    const fy = Game.level.enemies.find((e) => e.type === "flyer");
+    const fy0 = fy.y;
+    // 初相位是随机的，用 2 秒内的最大偏移判定，避免正弦重合导致偶发失败
+    let flyDev = 0;
+    for (let i = 0; i < 120; i++) {
+      update(1 / 60);
+      flyDev = Math.max(flyDev, Math.abs(fy.y - fy0));
+    }
+    check("飞行龟会浮动", flyDev > 8);
+
+    Game.loadLevel(2);
+    check("1-3 Boss 就位", !!Game.level.boss && Game.level.boss.hp === 5);
+    check("城门初始实心", Game.level.grid[7][118] === T.STONE);
+
+    // 水管进 / 出
+    Game.loadLevel(0);
+    const pd = Game.level.pipeDowns[0];
+    Game.player.x = pd.x + 18;
+    Game.player.y = pd.topY - Game.player.h;
+    Game.player.vy = 0;
+    Game.player.onGround = true;
+    EasyInput.down("down");
+    step(1);
+    check("进水管动画开始", Game.pipeAnim && Game.pipeAnim.mode === "in");
+    step(30);
+    check("进入地下金币房", Game.inBonus && Music.bonus);
+    Game.player.x = Game.level.flagX - 10;
+    Game.player.y = 13 * TILE - Game.player.h;
+    step(1);
+    check("出水管动画开始", Game.pipeAnim && Game.pipeAnim.mode === "out");
+    step(30);
+    check("回到地面", !Game.inBonus && !Game.pipeAnim && !Music.bonus);
+    EasyInput.releaseAll();
+
+    // 进度存档往返
+    Game.unlocked = 2;
+    Game.levelBests = { 0: 1234, 2: 5678 };
+    Game.saveProgress();
+    Game.unlocked = 0;
+    Game.levelBests = {};
+    Game.loadProgress();
+    check("进度存档往返", Game.unlocked === 2 && Game.levelBests[2] === 5678);
+
+    // 键位重映射
+    const bakBinds = JSON.parse(JSON.stringify(KEY_BINDS));
+    MarioAPI.setBindings({ jump: ["KeyL"] });
+    check("键位可重映射", actionForCode("KeyL") === "jump" && actionForCode("Space") === null);
+    for (const k of Object.keys(bakBinds)) KEY_BINDS[k] = bakBinds[k];
+    saveBinds();
+
+    render();
+    check("渲染无异常", true);
+  } catch (e) {
+    check("异常：" + e.message, false);
+  }
+
+  // 还原进度与游戏状态
+  try {
+    if (bakU === null) localStorage.removeItem("mario_unlocked");
+    else localStorage.setItem("mario_unlocked", bakU);
+    if (bakB === null) localStorage.removeItem("mario_level_bests");
+    else localStorage.setItem("mario_level_bests", bakB);
+  } catch (e) {}
+  Game.loadProgress();
+  Game.score = 0;
+  Game.lives = 3;
+  Game.coins = 0;
+  Game.loadLevel(0);
+  Game.phase = "title";
+  Music.stop();
+  Music.setScene(false);
+
+  const pass = results.filter((r) => r.ok).length;
+  const panel = document.createElement("div");
+  panel.id = "selftest";
+  panel.style.cssText =
+    "position:fixed;left:12px;top:12px;right:12px;bottom:12px;z-index:99;overflow:auto;" +
+    "background:rgba(8,14,26,.95);color:#dfe6f5;font:13px/1.7 monospace;padding:14px;" +
+    "border-radius:10px;border:1px solid #38445e;white-space:pre";
+  panel.textContent = "内置自测 " + pass + " / " + results.length +
+    "\n点击本面板可关闭\n\n" +
+    results.map((r) => (r.ok ? "PASS " : "FAIL ") + r.name).join("\n");
+  panel.addEventListener("click", () => panel.remove());
+  document.body.appendChild(panel);
+
+  document.title = pass === results.length ? "ALLPASS" : "FAIL" + (results.length - pass);
+  const summary = { pass, total: results.length, results };
+  window.__selfTest = summary;
+  return summary;
+}
+
+Game.loadBest();
+Game.loadProgress();
+Game.loadLevel(0);
+Game.phase = "title";
+requestAnimationFrame(frame);
+
+/* ?test=1：自动跑一遍内置自测（正式游玩不带这个参数） */
+if (new URLSearchParams(location.search).get("test") === "1") {
+  setTimeout(runSelfTest, 400);
+}
+</script>
+</body>
+</html>

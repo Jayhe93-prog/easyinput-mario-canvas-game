@@ -1,0 +1,25 @@
+# ---- 依赖 ----
+node_modules/
+
+# ---- 构建产物（用 GitHub Releases 分发 exe，不要提交进仓库）----
+dist/
+*.exe
+*.blockmap
+*.dmg
+*.AppImage
+
+# ---- 日志与缓存 ----
+*.log
+.cache/
+.cache
+.screenshots/
+
+# ---- 临时抽查页 ----
+_visual.html
+_test_b*.html
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
