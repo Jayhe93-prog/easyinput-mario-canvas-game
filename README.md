@@ -12,6 +12,8 @@
 
 两边玩法内容完全一致，但**进度互不相通**（各自独立存档）。
 
+详细技术变更记录见 [CHANGELOG.md](CHANGELOG.md)。
+
 ---
 
 ## 免责声明
@@ -105,8 +107,10 @@
 .
 ├─ super-mario.html        游戏本体（单文件，零外部依赖）
 ├─ README.md
+├─ CHANGELOG.md            版本变更记录
 ├─ LICENSE                 MIT 许可
 ├─ .gitignore
+├─ index.html              Pages 入口，跳转到游戏页
 └─ desktop/                Electron 封装工程
    ├─ main.js              主进程：窗口、game:// 协议、F11 全屏、单实例
    ├─ package.json         构建配置
