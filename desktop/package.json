@@ -1,7 +1,7 @@
 {
   "name": "pixel-runner",
   "productName": "超级马里奥",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "像素风横版闯关小游戏（单文件 HTML 的桌面封装）",
   "main": "main.js",
   "license": "MIT",

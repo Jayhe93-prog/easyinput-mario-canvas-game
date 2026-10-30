@@ -8,7 +8,7 @@
 一个零依赖的像素风横版闯关小游戏，整个游戏就是**一个 HTML 文件**。
 
 - `super-mario.html` —— 游戏本体，双击用浏览器打开即可玩，Mac / Windows / 手机通用
-- `Super-Mario-v1.0.0.exe` —— Windows 桌面版，双击即玩，免安装
+- `Super-Mario-v1.1.0.exe` —— Windows 桌面版，双击即玩，免安装
 
 两边玩法内容完全一致，但**进度互不相通**（各自独立存档）。
 
@@ -33,7 +33,7 @@
 
 ### Windows 桌面版
 
-双击 `Super-Mario-v1.0.0.exe` 即可，不需要安装任何东西。
+双击 `Super-Mario-v1.1.0.exe` 即可，不需要安装任何东西。
 
 > 首次运行 Windows 可能弹出「已保护你的电脑 / 未知发布者」提示，
 > 这是因为程序没有做代码签名，属于正常现象。
@@ -128,7 +128,7 @@
    └─ build/icon.ico       应用图标
 ```
 
-Windows 便携版 `Super-Mario-v1.0.0.exe` 不打进仓库（70 MB，且可由源码重新构建），请到 [Releases](../../releases) 页面下载。
+Windows 便携版 `Super-Mario-v1.1.0.exe` 不打进仓库（70 MB，且可由源码重新构建），请到 [Releases](../../releases) 页面下载。
 
 桌面版只是给 HTML 套了一层窗口外壳，游戏逻辑完全仍在 `super-mario.html` 里。
 它用自定义协议 `game://app` 加载页面，这样存档有独立的 origin，不会和其他本地 HTML 页面混在一起。

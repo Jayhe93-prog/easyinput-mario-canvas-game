@@ -3,7 +3,9 @@
 本文件记录本项目的所有重要变更。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [1.1.0] - 2026-10-30
+
+- 下载：[Releases · v1.1.0](https://github.com/Jayhe93-prog/easyinput-mario-canvas-game/releases/tag/v1.1.0)
 
 ### 新增
 
@@ -26,6 +28,15 @@
   - 1-1 草原起程：新增 x=12（原 x=24 保留）
   - 1-2 断桥高塔：新增 x=7（原 x=35 保留）
   - 1-3 终局堡垒：新增 x=5（原 x=72 保留）
+
+### 验证记录
+
+| 验证项 | 结果 |
+|---|---|
+| 内置自测（`?test=1`，20 项） | **20/20 ALLPASS**，无控制台报错 |
+| Pages 线上文件 | 与源码一致（128,655 字节），含 `volcanoMelody` / `sizzle()` |
+| exe 内嵌资源 | `resources/super-mario.html` 与源码 SHA256 一致 |
+| exe 启动 | 进程名与窗口标题均为「超级马里奥」 |
 
 ## [1.0.0] - 2026-10-27
 
