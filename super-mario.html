@@ -101,9 +101,9 @@
   </div>
   <div id="hint">
     <kbd>←</kbd><kbd>→</kbd> 移动 &nbsp;·&nbsp; <kbd>↑</kbd> / <kbd>空格</kbd> 跳跃（长按跳更高）
-    &nbsp;·&nbsp; <kbd>K</kbd> / <kbd>X</kbd> 发射火球（吃火焰花后）
+    &nbsp;·&nbsp; <kbd>K</kbd> / <kbd>X</kbd> 发射火球（变大后）
     &nbsp;·&nbsp; <kbd>↓</kbd> 钻进带箭头的水管
-    &nbsp;·&nbsp; <kbd>Enter</kbd> 开始/重来 &nbsp;·&nbsp; <kbd>C</kbd> 继续已解锁关卡
+    &nbsp;·&nbsp; <kbd>Enter</kbd> 开始/重来（标题界面 <kbd>←</kbd><kbd>→</kbd> 可选任意关卡）&nbsp;·&nbsp; <kbd>C</kbd> 继续已解锁关卡
     &nbsp;·&nbsp; <kbd>P</kbd> 暂停 &nbsp;·&nbsp; <kbd>M</kbd> 音乐/音效
     <br />
     手机/平板可用屏幕虚拟按键（含 ▼ 钻水管、暂停、静音）；也支持程序化操控：
@@ -217,6 +217,10 @@ window.addEventListener("keydown", (e) => {
   const action = actionForCode(e.code);
   if (action) {
     e.preventDefault();
+    if (Game.phase === "title" && (action === "left" || action === "right")) {
+      if (!e.repeat) Game.selectLevel(action === "left" ? -1 : 1);
+      return;
+    }
     setAction(action, true);
     return;
   }
@@ -259,7 +263,18 @@ window.addEventListener("blur", () => {
       btn.addEventListener("contextmenu", (e) => e.preventDefault());
       return;
     }
-    const press = (e) => { e.preventDefault(); setAction(act, true); };
+    const press = (e) => {
+      e.preventDefault();
+      // 标题界面：左右键选关，跳跃键直接开局（方便触屏用户）
+      if (Game.phase === "title") {
+        if (act === "left" || act === "right") {
+          Game.selectLevel(act === "left" ? -1 : 1);
+          return;
+        }
+        if (act === "jump") { Game.onConfirm(); return; }
+      }
+      setAction(act, true);
+    };
     const release = (e) => { e.preventDefault(); setAction(act, false); };
     btn.addEventListener("pointerdown", press);
     btn.addEventListener("pointerup", release);
@@ -765,13 +780,11 @@ const LEVEL_SPECS = [
       [106, 11], [107, 11],
     ],
     enemies: [
-      { x: 10, y: 12 }, { x: 19, y: 12 }, { x: 27, y: 12 },
-      { x: 35, y: 12 }, { x: 42, y: 12 }, { x: 50, y: 12 },
-      { x: 58, y: 12 }, { x: 64, y: 12 }, { x: 76, y: 12 },
-      { x: 83, y: 12 }, { x: 85, y: 12 }, { x: 99, y: 12 }, { x: 106, y: 12 },
-      { x: 40, y: 12, type: "koopa" }, { x: 79, y: 12, type: "koopa" },
+      { x: 12, y: 12 }, { x: 25, y: 12 }, { x: 38, y: 12 }, { x: 52, y: 12 },
+      { x: 66, y: 12 }, { x: 80, y: 12 }, { x: 94, y: 12 }, { x: 104, y: 12 },
+      { x: 44, y: 12, type: "koopa" }, { x: 88, y: 12, type: "koopa" },
       { x: 22, y: 7, type: "flyer", range: 3, amp: 1.2 },
-      { x: 50, y: 5, type: "flyer", dir: 1, range: 4, amp: 1.5 },
+      { x: 56, y: 5, type: "flyer", dir: 1, range: 4, amp: 1.5 },
     ],
   },
   {
@@ -831,12 +844,10 @@ const LEVEL_SPECS = [
       [120, 11], [121, 11],
     ],
     enemies: [
-      { x: 6, y: 12 }, { x: 15, y: 12 }, { x: 25, y: 12 },
-      { x: 29, y: 12 }, { x: 40, y: 12 }, { x: 50, y: 12 },
-      { x: 66, y: 12 }, { x: 62, y: 12 }, { x: 70, y: 12 },
-      { x: 80, y: 12 }, { x: 84, y: 12 }, { x: 90, y: 12 },
-      { x: 101, y: 12 }, { x: 104, y: 12 }, { x: 111, y: 12 }, { x: 118, y: 12 },
-      { x: 44, y: 12, type: "koopa" }, { x: 95, y: 12, type: "koopa" },
+      { x: 6, y: 12 }, { x: 18, y: 12 }, { x: 30, y: 12 }, { x: 42, y: 12 },
+      { x: 60, y: 12 }, { x: 70, y: 12 }, { x: 84, y: 12 }, { x: 100, y: 12 },
+      { x: 118, y: 12 },
+      { x: 44, y: 12, type: "koopa" }, { x: 92, y: 12, type: "koopa" },
       { x: 106, y: 10, type: "flyer", range: 1, amp: 1.5 },
       { x: 90, y: 5, type: "flyer", dir: 1, range: 4, amp: 1.6 },
     ],
@@ -886,11 +897,9 @@ const LEVEL_SPECS = [
     ],
     enemies: [
       { x: 9, y: 12, type: "firegoomba" }, { x: 17, y: 12, type: "firegoomba" },
-      { x: 29, y: 12, type: "firegoomba" }, { x: 33, y: 12, type: "firegoomba" },
-      { x: 42, y: 12, type: "firegoomba" }, { x: 52, y: 12, type: "firegoomba" },
-      { x: 56, y: 12, type: "firegoomba" }, { x: 62, y: 12, type: "firegoomba" },
-      { x: 78, y: 12, type: "firegoomba" }, { x: 83, y: 12, type: "firegoomba" },
-      { x: 90, y: 12, type: "firegoomba" }, { x: 93, y: 12, type: "firegoomba" },
+      { x: 29, y: 12, type: "firegoomba" }, { x: 41, y: 12, type: "firegoomba" },
+      { x: 53, y: 12, type: "firegoomba" }, { x: 65, y: 12, type: "firegoomba" },
+      { x: 78, y: 12, type: "firegoomba" }, { x: 90, y: 12, type: "firegoomba" },
       { x: 31, y: 12, type: "firekoopa" }, { x: 63, y: 12, type: "firekoopa" },
       { x: 21, y: 13, type: "lava" }, { x: 45, y: 13, type: "lava" }, { x: 69, y: 13, type: "lava" },
     ],
@@ -947,17 +956,14 @@ const LEVEL_SPECS = [
     ],
     enemies: [
       { x: 7, y: 12, type: "firegoomba" }, { x: 15, y: 12, type: "firegoomba" },
-      { x: 23, y: 12, type: "firegoomba" }, { x: 29, y: 12, type: "firegoomba" },
-      { x: 37, y: 12, type: "firegoomba" }, { x: 43, y: 12, type: "firegoomba" },
-      { x: 53, y: 12, type: "firegoomba" }, { x: 57, y: 12, type: "firegoomba" },
-      { x: 63, y: 12, type: "firegoomba" }, { x: 75, y: 12, type: "firegoomba" },
-      { x: 81, y: 12, type: "firegoomba" }, { x: 87, y: 12, type: "firegoomba" },
-      { x: 99, y: 12, type: "firegoomba" }, { x: 105, y: 12, type: "firegoomba" },
-      { x: 30, y: 12, type: "firekoopa" }, { x: 66, y: 12, type: "firekoopa" },
+      { x: 27, y: 12, type: "firegoomba" }, { x: 35, y: 12, type: "firegoomba" },
+      { x: 47, y: 12, type: "firegoomba" }, { x: 66, y: 12, type: "firegoomba" },
+      { x: 87, y: 12, type: "firegoomba" }, { x: 103, y: 12, type: "firegoomba" },
+      { x: 30, y: 12, type: "firekoopa" }, { x: 72, y: 12, type: "firekoopa" },
       { x: 26, y: 7, type: "flyer", range: 3, amp: 1.2 },
       { x: 56, y: 5, type: "flyer", dir: 1, range: 4, amp: 1.5 },
-      { x: 20, y: 13, type: "lava" }, { x: 40, y: 13, type: "lava" }, { x: 60, y: 13, type: "lava" },
-      { x: 78, y: 13, type: "lava" }, { x: 96, y: 13, type: "lava" },
+      { x: 20, y: 13, type: "lava" }, { x: 40, y: 13, type: "lava" },
+      { x: 60, y: 13, type: "lava" }, { x: 78, y: 13, type: "lava" },
     ],
   },
   {
@@ -1016,17 +1022,15 @@ const LEVEL_SPECS = [
     ],
     enemies: [
       { x: 7, y: 12, type: "firegoomba" }, { x: 15, y: 12, type: "firegoomba" },
-      { x: 25, y: 12, type: "firegoomba" }, { x: 30, y: 12, type: "firegoomba" },
-      { x: 44, y: 12, type: "firegoomba" }, { x: 49, y: 12, type: "firegoomba" },
+      { x: 25, y: 12, type: "firegoomba" }, { x: 44, y: 12, type: "firegoomba" },
       { x: 60, y: 12, type: "firegoomba" }, { x: 69, y: 12, type: "firegoomba" },
-      { x: 81, y: 12, type: "firegoomba" }, { x: 86, y: 12, type: "firegoomba" },
-      { x: 92, y: 12, type: "firegoomba" }, { x: 101, y: 12, type: "firegoomba" },
-      { x: 110, y: 12, type: "firegoomba" }, { x: 116, y: 12, type: "firegoomba" },
+      { x: 81, y: 12, type: "firegoomba" }, { x: 101, y: 12, type: "firegoomba" },
+      { x: 116, y: 12, type: "firegoomba" },
       { x: 40, y: 12, type: "firekoopa" }, { x: 88, y: 12, type: "firekoopa" },
       { x: 106, y: 10, type: "flyer", range: 1, amp: 1.5 },
       { x: 78, y: 5, type: "flyer", dir: 1, range: 4, amp: 1.6 },
-      { x: 18, y: 13, type: "lava" }, { x: 34, y: 13, type: "lava" }, { x: 52, y: 13, type: "lava" },
-      { x: 74, y: 13, type: "lava" }, { x: 96, y: 13, type: "lava" },
+      { x: 18, y: 13, type: "lava" }, { x: 34, y: 13, type: "lava" },
+      { x: 52, y: 13, type: "lava" }, { x: 74, y: 13, type: "lava" },
     ],
   },
 ];
@@ -1084,6 +1088,7 @@ const Game = {
   pipeAnim: null,          // 进出水管的 0.4s 动画
   pendingPipe: null,       // 进管前记下的落脚点
   unlocked: 0,             // 已解锁的最高关卡索引（标题界面“继续游戏”用）
+  selectIndex: 0,          // 标题界面 ← → 选择的起始关卡
   levelBests: {},          // 各关最高分
   levelStartScore: 0,      // 进入本关时的总分，用于算本关得分
   newRecord: false,
@@ -1214,10 +1219,19 @@ const Game = {
     this.toastTimer = 1.4;
   },
 
+  /** 标题界面 ← / →：切换要挑战的关卡（不受解锁进度限制） */
+  selectLevel(dir) {
+    if (this.phase !== "title") return;
+    const next = clamp(this.selectIndex + dir, 0, LEVEL_SPECS.length - 1);
+    if (next === this.selectIndex) return;
+    this.selectIndex = next;
+    Sound.blip(660, 0.05, "square", 0.03);
+  },
+
   onConfirm() {
     if (this.phase === "title") {
       this.score = 0; this.lives = 3; this.coins = 0;
-      this.loadLevel(0);
+      this.loadLevel(this.selectIndex);
       Sound.ensure();
       Music.start();
     } else if (this.phase === "gameover" || this.phase === "win") {
@@ -1607,7 +1621,7 @@ function collectItem(it) {
       p.y -= 16;
       p.invuln = Math.max(p.invuln, 0.6);
     }
-    Game.toast("变大！被撞一下只会变小");
+    Game.toast("变大！按 K / X 吐火球");
     Sound.powerup();
   } else if (it.type === "flower") {
     if (!p.big) {
@@ -1799,9 +1813,9 @@ function updatePlayer(dt) {
     else p.vx -= Math.sign(p.vx) * f;
   }
 
-  // 火球：火球形态下按 K / X 发射（同屏上限 2 颗）
+  // 火球：变大后（蘑菇 / 火焰花）按 K / X 发射（同屏上限 2 颗）
   p.shootCd = Math.max(0, (p.shootCd || 0) - dt);
-  if (p.fire && Input.shootPressed && p.shootCd <= 0 && Game.fireballs.length < FIRE_MAX) {
+  if (p.big && Input.shootPressed && p.shootCd <= 0 && Game.fireballs.length < FIRE_MAX) {
     shootFireball(p);
   }
 
@@ -1967,20 +1981,21 @@ function updateEnemies(dt) {
         if (Math.abs(e.x - (Game.camX + VIEW_W * 0.5)) < 420) Sound.lava();
       }
     } else {
+      e.vy = Math.min(e.vy + GRAVITY * dt, MAX_FALL);   // 走出平台边缘后会掉下去
       if (e.vx !== 0 && moveX(e, e.vx * dt) !== 0) {
-        e.vx = -e.vx;                // 撞墙掉头（滑行龟壳也会反弹）
-        if (isKoopa(e) && e.state === "slide") Sound.bump();
+        if (isKoopa(e) && e.state === "slide") {
+          // 滑行龟壳撞墙后停下，不再来回弹射
+          e.state = "shell";
+          e.vx = 0;
+          e.shellCd = 0.18;
+          Sound.bump();
+        } else {
+          e.vx = -e.vx;                // 撞墙掉头
+        }
       }
       const landed = moveY(e, e.vy * dt);
       if (landed === 1) e.vy = 0;
-
-      // 走路的小怪遇到平台边缘掉头；滑行龟壳会直接滑下去
-      if (landed === 1 && !(isKoopa(e) && e.state === "slide")) {
-        const frontX = e.vx > 0 ? e.x + e.w + 2 : e.x - 2;
-        const tx = Math.floor(frontX / TILE);
-        const ty = Math.floor((e.y + e.h + 2) / TILE);
-        if (!isSolid(tx, ty)) e.vx = -e.vx;
-      }
+      else if (landed === -1) e.vy = Math.max(e.vy, 0);
       if (e.y > FALL_LIMIT) e.alive = false;
 
       // 滑行的龟壳会撞飞路上的其他小怪
@@ -3617,8 +3632,7 @@ function drawOverlay() {
     const lines = [
       "← → 移动　↑ / 空格 跳跃（长按更高）　↓ 钻水管",
       "顶砖拿金币、踩乌龟缩壳，再把壳踢出去撞怪",
-      "吃火焰花按 K / X 吐火球；弹簧能把你弹得更高",
-      "隐藏砖、多段金币砖、带 ↓ 标记的水管都有惊喜",
+      "变大（蘑菇 / 火焰花）后按 K / X 吐火球",
       "1-3 / 2-3 终点有 Boss 把守，把它踩倒才能打开城门",
       "2-1 起进入火山世界：岩浆泡踩不灭，只能躲",
       "满 " + COINS_PER_LIFE + " 金币自动 1UP；掉坑会从存档点复活",
@@ -3626,7 +3640,10 @@ function drawOverlay() {
     if (Game.unlocked > 0) {
       lines.push("已解锁 " + (Game.unlocked + 1) + " / " + LEVEL_SPECS.length + " 关　按 C 继续");
     }
-    lines.push(blink ? "按 Enter 开始新游戏" : " ");
+    const sel = clamp(Game.selectIndex, 0, LEVEL_SPECS.length - 1);
+    const selBest = Game.levelBests[sel];
+    lines.push("← → 选关：" + LEVEL_SPECS[sel].name + (selBest ? "　最佳 " + selBest : ""));
+    lines.push(blink ? "按 Enter 开始所选关卡（所有关卡都可直接选）" : " ");
     drawCenterPanel("超级马里奥", lines, "#ffd447");
   } else if (Game.phase === "paused") {
     drawCenterPanel("已暂停", ["按 P 继续　·　R 重来本关"], "#8fd3ff");
@@ -3879,6 +3896,41 @@ function runSelfTest() {
     check("2-3 Boss 就位", !!Game.level.boss && Game.level.boss.hp === 6);
     check("2-3 有火系龟", Game.level.enemies.filter((e) => e.type === "firekoopa").length === 2);
     render();
+
+    // 标题界面自由选关 + 怪物密度上限
+    Game.phase = "title";
+    Game.selectIndex = 3;
+    Game.onConfirm();
+    check("可自由选择火山关卡开局", Game.levelIndex === 3 && Game.level.theme === "volcano");
+    check("每关怪物数量受控", LEVEL_SPECS.every((s) => (s.enemies || []).length <= 17));
+
+    // 变大后无需火焰花也能吐火球
+    Game.loadLevel(0);
+    Game.player.big = true; Game.player.fire = false;
+    Game.player.shootCd = 0;
+    Game.fireballs.length = 0;
+    Input.shootPressed = true;
+    step(1);
+    check("变大后能吐火球", Game.fireballs.length > 0);
+
+    // 走路小怪会掉进坑，而不是在边缘掉头
+    Game.loadLevel(1);
+    const gm = Game.level.enemies.find((e) => e.type === "goomba");
+    gm.x = 21 * TILE - gm.w - 2;
+    gm.y = 12 * TILE + 6;
+    gm.vx = 52; gm.vy = 0;
+    step(50);
+    check("小怪会掉进坑里", gm.y > 13 * TILE);
+
+    // 滑行龟壳撞墙后停住，不再来回弹射
+    Game.loadLevel(1);
+    const sh = Game.level.enemies.find((e) => e.type === "koopa");
+    sh.state = "slide"; sh.h = 20;
+    sh.y = 13 * TILE - sh.h;
+    sh.x = 15 * TILE - sh.w;
+    sh.vx = 380; sh.vy = 0;
+    for (let i = 0; i < 40 && sh.vx !== 0; i++) update(1 / 60);
+    check("龟壳撞墙后停下", sh.vx === 0 && sh.state === "shell");
 
     // 水管进 / 出
     Game.loadLevel(0);
