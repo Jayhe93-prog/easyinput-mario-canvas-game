@@ -104,9 +104,10 @@
     &nbsp;·&nbsp; <kbd>K</kbd> / <kbd>X</kbd> 发射火球（变大后）
     &nbsp;·&nbsp; <kbd>↓</kbd> 钻进带箭头的水管
     &nbsp;·&nbsp; <kbd>Enter</kbd> 开始/重来（标题界面 <kbd>←</kbd><kbd>→</kbd> 可选任意关卡）&nbsp;·&nbsp; <kbd>C</kbd> 继续已解锁关卡
-    &nbsp;·&nbsp; <kbd>P</kbd> 暂停 &nbsp;·&nbsp; <kbd>M</kbd> 音乐/音效
+    &nbsp;·&nbsp; <kbd>P</kbd> 暂停 &nbsp;·&nbsp; <kbd>M</kbd> 音乐/音效 &nbsp;·&nbsp; <kbd>Esc</kbd> 返回选关
     <br />
-    手机/平板可用屏幕虚拟按键（含 ▼ 钻水管、暂停、静音）；也支持程序化操控：
+    手机/平板可用屏幕虚拟按键（含 ▼ 钻水管、暂停、静音）；标题界面 <kbd>←</kbd><kbd>→</kbd> 选关、跳跃键开局；
+    也支持程序化操控：
     <code>EasyInput.tap('jump')</code> / <code>EasyInput.down('right')</code> / <code>EasyInput.tap('shoot')</code>
   </div>
 
@@ -225,6 +226,7 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   if (e.code === "Enter") { e.preventDefault(); Game.onConfirm(); }
+  if (e.code === "Escape") { e.preventDefault(); Game.toTitle(); }
   if (e.code === "KeyC") { e.preventDefault(); Game.continueGame(); }
   if (e.code === "KeyP") { e.preventDefault(); Game.togglePause(); }
   if (e.code === "KeyR") { e.preventDefault(); Game.restartLevel(); }
@@ -341,6 +343,7 @@ const Sound = {
   },
   toggleMute() {
     this.muted = !this.muted;
+    try { localStorage.setItem("mario_muted", this.muted ? "1" : "0"); } catch (e) {}
     if (this.muted) Music.stop();
     else if (Game.phase === "playing" || Game.phase === "flagdown") Music.start();
     Game.toast(this.muted ? "静音" : "声音开");
@@ -408,6 +411,9 @@ const Sound = {
       setTimeout(() => this.blip(f, 0.24, "sawtooth", 0.06), i * 150));
   },
 };
+
+// 恢复上次的静音选择，避免每次刷新都突然出声
+try { Sound.muted = localStorage.getItem("mario_muted") === "1"; } catch (e) {}
 
 /* ============================================================
    8-bit 循环 BGM：用 WebAudio 定时调度音符，无外部音频文件
@@ -647,6 +653,7 @@ function makeLevel(spec) {
         w: lava ? 22 : 24, h: koopa || flyer ? 28 : 26,
         vx: lava ? 0 : (e.dir || -1) * (koopa || flyer ? 46 : 52), vy: 0,
         type, state: "walk", shellCd: 0, dead: 0, alive: true, anim: 0,
+        active: false,   // 进入镜头附近才醒来，避免在远处自己走进坑里
       };
       if (flyer) {
         // 飞行龟：正弦上下浮动 + 在一定范围内横向巡逻
@@ -1258,6 +1265,20 @@ const Game = {
     }
   },
 
+  /** 返回标题 / 选关界面（Esc），保留关卡进度和已选中的关卡 */
+  toTitle() {
+    if (this.phase === "title") return;
+    this.phase = "title";
+    this.selectIndex = clamp(this.levelIndex, 0, LEVEL_SPECS.length - 1);
+    Music.stop();
+    Input.left = Input.right = Input.jump = Input._jumpHeld = false;
+    Input.jumpPressed = false;
+    Input.shoot = Input._shootHeld = false;
+    Input.shootPressed = false;
+    Input.down = Input._downHeld = false;
+    Input.downPressed = false;
+  },
+
   nextLevel() {
     this.saveBest();
     // 进入下一关：保留大个头，但不再带走火焰花与无敌星，
@@ -1737,15 +1758,23 @@ function updateFireballs(dt) {
 
     for (const e of lv.enemies) {
       if (!e.alive || e.dead > 0) continue;
-      if (overlap(f, e)) {
-        e.dead = 0.4;
+      if (!overlap(f, e)) continue;
+      // 岩浆泡免疫火球：火球熄灭，只冒一团蒸汽
+      if (e.type === "lava") {
         f.alive = false;
-        Game.score += 200;
-        Game.shake = 3;
-        Sound.stomp();
-        spawnParticles(e.x + e.w / 2, e.y + e.h / 2, "#ff9838", 12, 170);
+        Sound.sizzle();
+        spawnParticles(f.x + 6, f.y + 6, "#ffd9a0", 10, 130);
         break;
       }
+      e.dead = 0.4;
+      f.alive = false;
+      Game.score += 200;
+      Game.shake = 3;
+      // 火系敌人被火球打中：嘶啦一声，而不是普通踩踏音
+      if (e.type === "firekoopa" || e.type === "firegoomba") Sound.sizzle();
+      else Sound.stomp();
+      spawnParticles(e.x + e.w / 2, e.y + e.h / 2, "#ff9838", 12, 170);
+      break;
     }
   }
 
@@ -1953,6 +1982,12 @@ function updateEnemies(dt) {
 
   for (const e of lv.enemies) {
     if (!e.alive) continue;
+
+    // 镜头外的怪先不动，等玩家接近再开始巡逻
+    if (!e.active) {
+      if (e.x > Game.camX - 200 && e.x < Game.camX + VIEW_W + 220) e.active = true;
+      else continue;
+    }
 
     if (e.dead > 0) {
       e.dead -= dt;
@@ -3579,10 +3614,19 @@ function drawHUD() {
     ctx.textAlign = "left";
     ctx.fillText("火焰", 438, 37);
   } else if (pl && pl.big) {
+    // 变大就能吐火球，火球图标 + 文案提示
+    ctx.fillStyle = "#ff7a1a";
+    ctx.beginPath();
+    ctx.arc(424, 36, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ffe066";
+    ctx.beginPath();
+    ctx.arc(424, 37, 3.2, 0, Math.PI * 2);
+    ctx.fill();
     ctx.fillStyle = "#ffb84d";
-    ctx.font = "bold 15px Verdana, 'Microsoft YaHei', sans-serif";
+    ctx.font = "bold 12px Verdana, 'Microsoft YaHei', sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText("变大", 420, 37);
+    ctx.fillText("变大·火球", 436, 37);
   }
 
   // 最高分
@@ -3643,10 +3687,10 @@ function drawOverlay() {
     const sel = clamp(Game.selectIndex, 0, LEVEL_SPECS.length - 1);
     const selBest = Game.levelBests[sel];
     lines.push("← → 选关：" + LEVEL_SPECS[sel].name + (selBest ? "　最佳 " + selBest : ""));
-    lines.push(blink ? "按 Enter 开始所选关卡（所有关卡都可直接选）" : " ");
+    lines.push(blink ? "按 Enter 开始（触屏按跳跃键）｜所有关卡可直接选" : " ");
     drawCenterPanel("超级马里奥", lines, "#ffd447");
   } else if (Game.phase === "paused") {
-    drawCenterPanel("已暂停", ["按 P 继续　·　R 重来本关"], "#8fd3ff");
+    drawCenterPanel("已暂停", ["按 P 继续　·　R 重来本关　·　Esc 返回选关"], "#8fd3ff");
   } else if (Game.phase === "levelclear") {
     // 结算逐条出现：旗杆分 → 金币 → 时间奖励 → 本关得分/最高分
     const cd = Game.clearData || {
@@ -3737,7 +3781,7 @@ let lastTime = 0;
 /* ============================================================
    手柄支持：方向键 + A/B/X 映射到移动 / 跳跃 / 火球
    ============================================================ */
-const Pad = { active: false };
+const Pad = { active: false, leftHeld: false, rightHeld: false, jumpHeld: false };
 function pollGamepad() {
   if (!navigator.getGamepads) return;
   let pad = null;
@@ -3748,8 +3792,9 @@ function pollGamepad() {
   } catch (e) { return; }
 
   if (!pad) {
-    if (Pad.active) {
+    if (Pad.active || Pad.leftHeld || Pad.rightHeld || Pad.jumpHeld) {
       Pad.active = false;
+      Pad.leftHeld = Pad.rightHeld = Pad.jumpHeld = false;
       for (const k of ["left", "right", "jump", "shoot", "down"]) setAction(k, false);
     }
     return;
@@ -3764,8 +3809,22 @@ function pollGamepad() {
     shoot: btn(2) || btn(1),
     down: btn(13),
   };
-  const any = st.left || st.right || st.jump || st.shoot || st.down;
+  const any = st.left || st.right || st.jump || st.shoot || st.down || btn(9);
   if (!any && !Pad.active) return;   // 没手柄输入时不干扰键盘
+
+  // 标题界面：十字键选关，A / Start 开局
+  if (Game.phase === "title") {
+    if (st.left && !Pad.leftHeld) Game.selectLevel(-1);
+    if (st.right && !Pad.rightHeld) Game.selectLevel(1);
+    if ((st.jump || btn(9)) && !Pad.jumpHeld) Game.onConfirm();
+    Pad.active = any;
+    Pad.leftHeld = st.left;
+    Pad.rightHeld = st.right;
+    Pad.jumpHeld = st.jump || btn(9);
+    return;
+  }
+  Pad.leftHeld = Pad.rightHeld = Pad.jumpHeld = false;
+
   Pad.active = any;
   for (const k of Object.keys(st)) setAction(k, st[k]);
 }
@@ -3931,6 +3990,22 @@ function runSelfTest() {
     sh.vx = 380; sh.vy = 0;
     for (let i = 0; i < 40 && sh.vx !== 0; i++) update(1 / 60);
     check("龟壳撞墙后停下", sh.vx === 0 && sh.state === "shell");
+
+    // 岩浆泡免疫火球：火球熄灭、岩浆泡不受影响
+    Game.loadLevel(3);
+    const lb = Game.level.enemies.find((e) => e.type === "lava");
+    Game.fireballs = [{
+      x: lb.x + 2, y: lb.y + 2, w: 12, h: 12,
+      vx: FIRE_SPEED, vy: 0, life: 1, spin: 0, alive: true,
+    }];
+    updateFireballs(1 / 60);
+    check("岩浆泡免疫火球", lb.alive && lb.dead === 0);
+    Game.fireballs.length = 0;
+
+    // Esc 从关卡返回选关界面
+    Game.phase = "playing";
+    Game.toTitle();
+    check("Esc 可返回选关", Game.phase === "title" && Game.selectIndex === 3);
 
     // 水管进 / 出
     Game.loadLevel(0);
