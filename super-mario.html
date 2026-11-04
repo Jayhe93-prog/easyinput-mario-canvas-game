@@ -83,6 +83,15 @@
   }
   #touchpad .t-pause { right: 16px; }
   #touchpad .t-mute { right: 68px; }
+  #touchpad .t-full { right: 120px; }
+  /* 全屏时让画布按 16:9 居中留黑边，避免拉伸 */
+  #stage:fullscreen {
+    width: 100vw; height: 100vh;
+    border-radius: 0; background: #000;
+  }
+  #stage:fullscreen canvas {
+    width: 100%; height: 100%; object-fit: contain;
+  }
 </style>
 </head>
 <body>
@@ -97,6 +106,7 @@
       <button class="t-jump" data-act="jump" aria-label="跳">跳</button>
       <button class="t-mini t-pause" data-act="pause" aria-label="暂停">❚❚</button>
       <button class="t-mini t-mute" data-act="mute" aria-label="声音">♪</button>
+      <button class="t-mini t-full" data-act="full" aria-label="全屏">全</button>
     </div>
   </div>
   <div id="hint">
@@ -106,7 +116,7 @@
     &nbsp;·&nbsp; <kbd>Enter</kbd> 开始/重来（标题界面 <kbd>←</kbd><kbd>→</kbd> 可选任意关卡）&nbsp;·&nbsp; <kbd>C</kbd> 继续已解锁关卡
     &nbsp;·&nbsp; <kbd>P</kbd> 暂停 &nbsp;·&nbsp; <kbd>M</kbd> 音乐/音效 &nbsp;·&nbsp; <kbd>Esc</kbd> 返回选关
     <br />
-    手机/平板可用屏幕虚拟按键（含 ▼ 钻水管、暂停、静音）；标题界面 <kbd>←</kbd><kbd>→</kbd> 选关、跳跃键开局；
+    手机/平板可用屏幕虚拟按键（含 ▼ 钻水管、暂停、静音、全屏）；标题界面 <kbd>←</kbd><kbd>→</kbd> 选关、跳跃键开局；
     也支持程序化操控：
     <code>EasyInput.tap('jump')</code> / <code>EasyInput.down('right')</code> / <code>EasyInput.tap('shoot')</code>
   </div>
@@ -247,20 +257,47 @@ window.addEventListener("blur", () => {
   Input.down = Input._downHeld = false;
 });
 
+/* 全屏切换：优先用浏览器的 Fullscreen API，手机浏览器不支持时给提示 */
+function toggleFullscreen() {
+  const stage = document.getElementById("stage");
+  const exit = document.exitFullscreen || document.webkitExitFullscreen;
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    if (exit) exit.call(document);
+    return;
+  }
+  const req = stage.requestFullscreen || stage.webkitRequestFullscreen;
+  if (req) {
+    const ret = req.call(stage);
+    if (ret && ret.catch) ret.catch(() => Game.toast("当前浏览器不支持全屏"));
+  } else {
+    Game.toast("当前浏览器不支持全屏");
+  }
+}
+
 /* 触屏虚拟按键：pointer 事件直接转发到输入层 */
 (function setupTouchPad() {
   const pad = document.getElementById("touchpad");
   const coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
   if (coarse || "ontouchstart" in window) document.body.classList.add("touch");
   if (!pad) return;
+
+  document.addEventListener("fullscreenchange", () => {
+    const btn = pad.querySelector(".t-full");
+    if (!btn) return;
+    const on = !!document.fullscreenElement;
+    btn.textContent = on ? "退" : "全";
+    btn.setAttribute("aria-label", on ? "退出全屏" : "全屏");
+  });
+
   pad.querySelectorAll("button").forEach((btn) => {
     const act = btn.dataset.act;
-    // 暂停 / 静音按钮直接触发对应动作，不进输入层
-    if (act === "pause" || act === "mute") {
+    // 暂停 / 静音 / 全屏按钮直接触发，不进输入层
+    if (act === "pause" || act === "mute" || act === "full") {
       btn.addEventListener("pointerdown", (e) => {
         e.preventDefault();
         if (act === "pause") Game.togglePause();
-        else Sound.toggleMute();
+        else if (act === "mute") Sound.toggleMute();
+        else toggleFullscreen();
       });
       btn.addEventListener("contextmenu", (e) => e.preventDefault());
       return;
@@ -393,6 +430,21 @@ const Sound = {
   sizzle() {
     this.blip(900, 0.07, "sawtooth", 0.045, 320);
     setTimeout(() => this.blip(340, 0.13, "triangle", 0.035, 110), 55);
+  },
+  /** 弹簧：短促的金属弹起声 */
+  spring() {
+    this.blip(300, 0.16, "square", 0.05, 880);
+    setTimeout(() => this.blip(1040, 0.1, "triangle", 0.035, 620), 90);
+  },
+  /** Boss 受伤：低沉厚重的两段闷响 */
+  boss() {
+    this.blip(180, 0.12, "sawtooth", 0.065, 110);
+    setTimeout(() => this.blip(110, 0.2, "square", 0.05, 55), 60);
+  },
+  /** 碰到旗杆：先下滑再扬旗 */
+  flag() {
+    this.blip(920, 0.28, "triangle", 0.05, 300);
+    setTimeout(() => this.blip(620, 0.12, "square", 0.04, 480), 260);
   },
   pipeDown() {
     this.blip(520, 0.34, "square", 0.055, 110);
@@ -1369,7 +1421,7 @@ const Game = {
     p.vx = 0; p.vy = 240; p.onGround = false;
     this.score += 500;
     spawnParticles(lv.flagX + 8, 5 * TILE, "#ffe066", 22, 210);
-    Sound.clear();
+    Sound.flag();
   },
 
   updateFlagDown(dt) {
@@ -1908,7 +1960,7 @@ function updatePlayer(dt) {
       p.vy = -980;                     // 约 8 格，足够上平台又不至于飞出画面
       p.onGround = false;
       s.squash = 0.6;
-      Sound.jump();
+      Sound.spring();
       Game.shake = 3;
       break;
     }
@@ -2233,7 +2285,7 @@ function hurtBoss(amount, dir = 1) {
   b.invuln = 0.85;
   b.vx = (dir || 1) * 90;
   Game.shake = 6;
-  Sound.stomp();
+  Sound.boss();
   addPop("-" + amount, b.x + b.w / 2, b.y + 8, "#ff8a80");
   spawnParticles(b.x + b.w / 2, b.y + b.h / 2, "#2fa84f", 14, 190);
   if (b.hp <= 0) defeatBoss();
@@ -3838,6 +3890,17 @@ function frame(now) {
   render();
   requestAnimationFrame(frame);
 }
+
+// 切到后台时停掉 BGM，回到前台再续上，避免后台一直响
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    Music.stop();
+  } else if (!Sound.muted &&
+             (Game.phase === "playing" || Game.phase === "flagdown")) {
+    Music.start();
+  }
+  lastTime = 0;   // 避免回到前台的第一帧 dt 过大
+});
 
 /* 供外部工具 / 自动化脚本使用的入口 */
 window.MarioGame = Game;

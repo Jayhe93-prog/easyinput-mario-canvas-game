@@ -3,6 +3,27 @@
 本文件记录本项目的所有重要变更。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.3.0] - 2026-11-04
+
+- 仓库：https://github.com/Jayhe93-prog/easyinput-mario-canvas-game
+- 在线试玩：https://jayhe93-prog.github.io/easyinput-mario-canvas-game/
+- 下载：[Releases · v1.3.0](https://github.com/Jayhe93-prog/easyinput-mario-canvas-game/releases/tag/v1.3.0)
+
+### 新增
+
+- 移动端新增全屏按钮（触屏顶部「全」），全屏后画面按 16:9 居中、黑边填充，不再拉伸变形；
+  浏览器不支持 Fullscreen API 时会提示。
+- 新增三个专属音效：弹簧弹起（金属音）、Boss 受伤（低沉两段闷响）、碰到旗杆（下滑音）。
+
+### 修复
+
+- 碰到旗杆时不再提前播放整段过关音乐，改为旗杆下滑音，过关结算时再播完整 jingle。
+- 切到其他标签页或后台时自动暂停 BGM，回到页面且游戏进行中时自动续播。
+
+### 校验
+
+- 内置自测保持 `27 / 27 ALLPASS`，无控制台报错。
+
 ## [1.2.0] - 2026-11-04
 
 - 仓库：https://github.com/Jayhe93-prog/easyinput-mario-canvas-game
