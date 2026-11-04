@@ -795,7 +795,7 @@ const LEVEL_SPECS = [
     width: 112, time: 160, startX: 2, flagX: 108, checkpoint: 60,
     ground: [[0, 20], [24, 44], [50, 70], [74, 111]],
     platforms: [
-      { x: 6, y: 8, w: 4, type: "brick" },
+      { x: 6, y: 9, w: 4, type: "brick" },
       { x: 12, y: 6, w: 3, type: "brick" },
       { x: 21, y: 9, w: 3, type: "stone" },
       { x: 29, y: 8, w: 5, type: "brick" },
@@ -809,8 +809,8 @@ const LEVEL_SPECS = [
       { x: 96, y: 5, w: 3, type: "brick" },
       { x: 102, y: 8, w: 4, type: "stone" },
     ],
-    qblocks: [[7, 8], [13, 6], [30, 8], [39, 6], [52, 7], [61, 5], [80, 9], [89, 7], [97, 5]],
-    mushrooms: [[7, 8], [35, 8]],
+    qblocks: [[7, 9], [13, 6], [30, 8], [39, 6], [52, 7], [61, 5], [80, 9], [89, 7], [97, 5]],
+    mushrooms: [[7, 9], [35, 8]],
     stars: [[86, 7]],
     flowers: [[26, 8]],
     hidden: [[4, 7], [50, 6]],
@@ -924,10 +924,10 @@ const LEVEL_SPECS = [
       { x: 50, y: 9, w: 4, type: "brick" },
       { x: 57, y: 7, w: 3, type: "stone" },
       { x: 64, y: 9, w: 4, type: "brick" },
-      { x: 76, y: 8, w: 4, type: "stone" },
+      { x: 76, y: 9, w: 6, type: "stone" },
       { x: 85, y: 6, w: 3, type: "brick" },
     ],
-    qblocks: [[7, 9], [14, 7], [27, 9], [36, 7], [51, 9], [58, 7], [65, 9], [77, 8], [86, 6]],
+    qblocks: [[7, 9], [14, 7], [27, 9], [36, 7], [51, 9], [58, 7], [65, 9], [77, 9], [86, 6]],
     mushrooms: [[7, 9], [59, 7]],
     stars: [[40, 9]],
     flowers: [[30, 9]],
@@ -1037,7 +1037,7 @@ const LEVEL_SPECS = [
       { x: 12, y: 5, w: 3, type: "brick" },
       { x: 21, y: 9, w: 4, type: "stone" },
       { x: 27, y: 7, w: 4, type: "brick" },
-      { x: 38, y: 8, w: 5, type: "brick" },
+      { x: 38, y: 9, w: 5, type: "brick" },
       { x: 45, y: 6, w: 3, type: "stone" },
       { x: 57, y: 8, w: 6, type: "brick" },
       { x: 65, y: 6, w: 4, type: "brick" },
@@ -1047,10 +1047,10 @@ const LEVEL_SPECS = [
       { x: 102, y: 7, w: 5, type: "brick" },
       { x: 109, y: 5, w: 3, type: "brick" },
     ],
-    qblocks: [[6, 7], [13, 5], [28, 7], [39, 8], [46, 6], [58, 8], [66, 6], [85, 7], [91, 5], [103, 7]],
+    qblocks: [[6, 7], [13, 5], [28, 7], [39, 9], [46, 6], [58, 8], [66, 6], [85, 7], [91, 5], [103, 7]],
     mushrooms: [[6, 7], [88, 7]],
     stars: [[80, 9]],
-    flowers: [[42, 8]],
+    flowers: [[42, 9]],
     hidden: [[3, 8], [70, 8]],
     hidden1up: [[99, 8]],
     multiCoins: [[31, 6, 5], [68, 7, 4]],
@@ -1866,7 +1866,7 @@ const MAX_SPEED = 250;
 const ACCEL = 1900;
 const FRICTION = 2200;
 const GRAVITY = 1900;
-const JUMP_VEL = -760;
+const JUMP_VEL = -780;          // 最大跳高约 160px（5 格），刚好能跳上 8 行平台
 const MAX_FALL = 820;
 
 function updatePlayer(dt) {
